@@ -1,0 +1,16 @@
+{
+  "name": "data-agent-local",
+  "version": "0.1.0",
+  "description": "Local-first metrics, semantic layer, wiki and data analysis agent",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "audit": "node scripts/audit.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "MIT"
+}

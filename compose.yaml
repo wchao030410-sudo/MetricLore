@@ -1,0 +1,11 @@
+services:
+  data-agent:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/app/data
+      - ./wiki:/app/wiki:ro

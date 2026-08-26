@@ -1,0 +1,61 @@
+{
+  "model": "commerce_daily",
+  "label": "电商经营日报",
+  "table": "daily_metrics",
+  "timeColumn": "date",
+  "defaultMetric": "revenue",
+  "metrics": {
+    "revenue": {
+      "label": "收入",
+      "description": "支付成功订单的含税收入",
+      "type": "atomic",
+      "aggregation": "SUM",
+      "column": "revenue",
+      "format": "currency",
+      "aliases": ["销售额", "营收", "GMV"]
+    },
+    "orders": {
+      "label": "订单量",
+      "description": "支付成功且未取消的订单数",
+      "type": "atomic",
+      "aggregation": "SUM",
+      "column": "orders",
+      "format": "integer",
+      "aliases": ["订单", "单量"]
+    },
+    "visitors": {
+      "label": "访客数",
+      "description": "按日去重的访问用户数",
+      "type": "atomic",
+      "aggregation": "SUM",
+      "column": "visitors",
+      "format": "integer",
+      "aliases": ["UV", "用户数", "访问人数"]
+    },
+    "aov": {
+      "label": "客单价",
+      "description": "收入除以订单量",
+      "type": "derived",
+      "numerator": "revenue",
+      "denominator": "orders",
+      "format": "currency",
+      "aliases": ["平均订单金额"]
+    },
+    "conversion_rate": {
+      "label": "转化率",
+      "description": "订单量除以访客数",
+      "type": "derived",
+      "numerator": "orders",
+      "denominator": "visitors",
+      "scale": 100,
+      "format": "percent",
+      "aliases": ["下单转化率", "CVR"]
+    }
+  },
+  "dimensions": {
+    "date": {"label": "日期", "column": "date", "type": "date", "aliases": ["时间", "天"]},
+    "region": {"label": "地区", "column": "region", "type": "string", "aliases": ["区域", "大区"]},
+    "channel": {"label": "渠道", "column": "channel", "type": "string", "aliases": ["来源", "流量渠道"]}
+  },
+  "timeGrains": ["day", "week", "month"]
+}
