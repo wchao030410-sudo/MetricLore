@@ -14,6 +14,7 @@ async function api(path, options) {
 }
 
 let catalog;
+let lastRun;
 
 function showPage(id) {
   document.querySelectorAll(".page").forEach((page) => page.classList.toggle("active", page.id === id));
@@ -51,6 +52,53 @@ function renderCatalog(model) {
   content.append(tablePanel);
 }
 
+function renderTrace(run) {
+  const target = $("#trace-content");
+  target.replaceChildren();
+  if (!run) { target.append(el("p", {}, "发起一次问答后，这里会显示其执行轨迹。")); return; }
+  target.append(el("h3", {}, `${run.skill} · ${run.status}`));
+  const list = el("ol", { class: "trace-list" });
+  (run.publicTrace || []).forEach((event) => {
+    const item = el("li");
+    item.append(el("strong", {}, event.state));
+    const detail = [event.skill && `Skill: ${event.skill}`, event.tool && `Tool: ${event.tool}`, event.capability && `能力: ${event.capability}`, event.elapsedMs !== undefined && `${event.elapsedMs}ms`].filter(Boolean).join(" · ");
+    if (detail) item.append(el("span", {}, detail));
+    list.append(item);
+  });
+  target.append(list);
+  const calls = el("p", { class: "meta" }, `工具调用：${(run.toolCalls || []).map((call) => call.name).join(" → ") || "无"}`);
+  target.append(calls);
+}
+
+function renderOntology(data) {
+  const entities = data.entities || [];
+  const summary = $("#ontology-summary"); summary.replaceChildren();
+  summary.append(el("h3", {}, `${entities.length} 个规范实体 · ${Object.keys(data.schema.relationTypes || {}).length} 类关系`));
+  summary.append(el("p", {}, "每张实体卡片都包含类型、状态与出边关系；通过 Agent Trace 可查看问答期间实际使用的知识证据。"));
+  const grid = $("#ontology-grid"); grid.replaceChildren();
+  entities.forEach((entity) => {
+    const card = el("article", { class: "card" });
+    card.append(el("span", { class: "tag" }, entity.type));
+    card.append(el("h3", {}, entity.title));
+    card.append(el("p", {}, entity.content.slice(0, 130)));
+    const relations = Object.entries(entity.relations || {}).flatMap(([relation, targets]) => targets.map((target) => `${relation} → ${target}`));
+    card.append(el("p", { class: "meta" }, relations.join(" · ") || "暂无关系"));
+    grid.append(card);
+  });
+}
+
+function renderSkills(data) {
+  const grid = $("#skill-grid"); grid.replaceChildren();
+  (data.skills || []).forEach((skill) => {
+    const card = el("article", { class: "card" });
+    card.append(el("span", { class: "tag" }, `max ${skill.maxSteps} steps`));
+    card.append(el("h3", {}, skill.name));
+    card.append(el("p", {}, skill.description));
+    card.append(el("p", { class: "meta" }, `Tools: ${skill.allowedTools.join(", ")}`));
+    grid.append(card);
+  });
+}
+
 function addMessage(role, text, payload) {
   const article = el("article", { class: role });
   if (role === "assistant") article.append(el("div", { class: "avatar" }, "DA"));
@@ -85,6 +133,7 @@ async function ask(message) {
     const result = await api("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message }) });
     pending.remove();
     addMessage("assistant", result.answer, result);
+    lastRun = result; renderTrace(lastRun);
   } catch (error) {
     pending.remove(); addMessage("assistant", `请求失败：${error.message}`);
   }
@@ -108,7 +157,7 @@ $("#wiki-form").addEventListener("submit", async (event) => {
   } catch (error) { target.replaceChildren(el("p", {}, error.message)); }
 });
 
-Promise.all([api("/api/health"), api("/api/catalog")]).then(([health, model]) => {
+Promise.all([api("/api/health"), api("/api/catalog"), api("/api/ontology"), api("/api/skills")]).then(([health, model, ontology, skills]) => {
   $("#health").textContent = `本地服务正常 · ${health.wikiDocuments} 篇知识`;
-  catalog = model; renderCatalog(model);
+  catalog = model; renderCatalog(model); renderOntology(ontology); renderSkills(skills);
 }).catch((error) => { $("#health").textContent = error.message; });

@@ -1,0 +1,1 @@
+{"name":"wiki-answer","version":"0.1.0","description":"回答数据口径、业务规则、表字段、来源和关系问题","triggers":["knowledge","definition","lineage"],"allowedTools":["semantic_catalog","wiki_search","wiki_entity","wiki_trace","ontology_neighbors","submit_evidence"],"maxSteps":5}

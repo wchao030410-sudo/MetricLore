@@ -1,0 +1,1 @@
+{"name":"answer-review","version":"0.1.0","description":"检查最终答案的范围、数字、引用和越界表达","triggers":["review"],"allowedTools":["submit_evidence"],"maxSteps":2}

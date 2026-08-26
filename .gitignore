@@ -5,3 +5,6 @@ node_modules/
 .DS_Store
 coverage/
 *.log
+outputs/candidates/
+outputs/evals/
+outputs/review-queue.json

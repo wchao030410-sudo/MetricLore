@@ -1,0 +1,1 @@
+{"name":"knowledge-ingest","version":"0.1.0","description":"把公开资料转为候选知识实体并进入校验流程","triggers":["ingest"],"allowedTools":["knowledge_validate"],"maxSteps":4}

@@ -1,0 +1,29 @@
+{
+  "version": "0.1.0",
+  "entityTypes": {
+    "BusinessDomain": {"directory": "domains"},
+    "BusinessProcess": {"directory": "processes"},
+    "Metric": {"directory": "metrics"},
+    "Dimension": {"directory": "dimensions"},
+    "DataAsset": {"directory": "assets"},
+    "DataField": {"directory": "fields"},
+    "BusinessRule": {"directory": "rules"},
+    "Dashboard": {"directory": "dashboards"},
+    "Source": {"directory": "sources"}
+  },
+  "relationTypes": {
+    "occursIn": {"from": ["BusinessProcess"], "to": ["BusinessDomain"]},
+    "measures": {"from": ["Metric"], "to": ["BusinessProcess"]},
+    "slicedBy": {"from": ["Metric"], "to": ["Dimension"]},
+    "storedIn": {"from": ["Metric", "Dimension", "DataField"], "to": ["DataAsset"]},
+    "contains": {"from": ["DataAsset"], "to": ["DataField"]},
+    "derivedFrom": {"from": ["Metric"], "to": ["Metric"]},
+    "governedBy": {"from": ["Metric", "DataAsset"], "to": ["BusinessRule"]},
+    "displays": {"from": ["Dashboard"], "to": ["Metric"]},
+    "sourcedFrom": {"from": ["BusinessDomain", "BusinessProcess", "Metric", "Dimension", "DataAsset", "DataField", "BusinessRule", "Dashboard"], "to": ["Source"]},
+    "readsFrom": {"from": ["DataAsset"], "to": ["DataAsset"]},
+    "relatedTo": {"from": ["BusinessDomain", "BusinessProcess", "Metric", "Dimension", "DataAsset", "DataField", "BusinessRule", "Dashboard"], "to": ["BusinessDomain", "BusinessProcess", "Metric", "Dimension", "DataAsset", "DataField", "BusinessRule", "Dashboard"]}
+  },
+  "requiredFields": ["key", "type", "title", "status", "sources"],
+  "statuses": ["draft", "candidate", "verified", "deprecated"]
+}

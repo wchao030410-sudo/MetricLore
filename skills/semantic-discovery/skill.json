@@ -1,0 +1,1 @@
+{"name":"semantic-discovery","version":"0.1.0","description":"发现并消歧指标、维度和业务过程","triggers":["discovery"],"allowedTools":["semantic_catalog","wiki_search","ontology_neighbors","submit_evidence"],"maxSteps":4}
