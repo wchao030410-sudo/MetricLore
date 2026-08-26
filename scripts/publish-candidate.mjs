@@ -21,6 +21,8 @@ if (existsSync(destination)) throw new Error("目标 Wiki 页面已存在，拒�
 mkdirSync(resolve(ROOT, `wiki/${directory}`), { recursive: true });
 const aliases = entity.aliases?.length ? `aliases: [${entity.aliases.join(", ")}]\n` : "";
 const sources = `[${entity.sources.join(", ")}]`;
-const body = `---\nkey: ${entity.key}\ntype: ${entity.type}\ntitle: ${entity.title}\nstatus: verified\n${aliases}sources: ${sources}\n---\n\n${entity.definition || "Imported candidate entity."}\n`;
+const relations = Object.entries(entity.relations || {}).flatMap(([relation, targets]) => (Array.isArray(targets) ? targets : [targets]).map((target) => `${relation}:${target}`));
+const relationLine = relations.length ? `relations: [${relations.join(", ")}]\n` : "";
+const body = `---\nkey: ${entity.key}\ntype: ${entity.type}\ntitle: ${entity.title}\nstatus: verified\n${aliases}sources: ${sources}\n${relationLine}---\n\n${entity.definition || "Imported candidate entity."}\n`;
 writeFileSync(destination, body);
 console.log(JSON.stringify({ published: destination.replace(`${ROOT}/`, ""), key: entity.key }, null, 2));

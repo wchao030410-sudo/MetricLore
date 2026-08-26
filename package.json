@@ -10,6 +10,7 @@
     "audit": "node scripts/audit.mjs",
     "health": "node scripts/health-check.mjs",
     "ingest": "node scripts/ingest.mjs raw/sample-metadata.md",
+    "ingest:sql": "node scripts/ingest.mjs raw/sample-query.sql",
     "review": "node scripts/review-queue.mjs",
     "eval": "node scripts/run-evals.mjs"
   },

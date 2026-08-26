@@ -39,6 +39,12 @@ test("traces a metric through ontology relations", () => {
   assert.ok(paths.some((path) => path.includes("governedBy:rule-daily-grain")));
 });
 
+test("combines aliases with local FTS retrieval", () => {
+  const wiki = new WikiIndex(undefined, new Ontology());
+  const results = wiki.search("GMV", 3, ["Metric"]);
+  assert.equal(results[0].key, "metric-revenue");
+});
+
 test("analysis composes time series, period comparison and dimension tools", async () => {
   const agent = createAgent();
   const result = await agent.answer("近14天收入为什么下降？");

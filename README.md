@@ -4,7 +4,7 @@
 
 - **指标平台**：指标目录、口径、原子指标与复合指标。
 - **数据语义层**：受治理的指标、维度、时间粒度和筛选条件。
-- **LLM Wiki 与本体**：结构化实体、来源、关系、血缘追踪和关键词/别名检索。
+- **LLM Wiki 与本体**：结构化实体、来源、关系、血缘追踪，以及 FTS5、关键词和别名混合检索。
 - **Skill 编排**：声明式 Skill Package、Tool Registry、步数预算、公开执行轨迹和证据账本。
 - **问数与分析**：自然语言识别指标，执行受控查询，并限制无证据归因。
 - **公开评测**：120 条合成回归用例，覆盖路由、工具、知识、问数、分析和安全拒答。
@@ -90,7 +90,8 @@ test/                        核心测试
 ```bash
 npm test       # 单元与集成测试
 npm run health # Wiki 本体、关系与来源校验
-npm run ingest # 从公开样例生成候选实体
+npm run ingest # 从公开 Markdown 样例生成候选实体
+npm run ingest:sql # 从公开 SQL 样例生成数据资产与字段候选
 npm run review # 生成候选知识 Review Queue
 npm run eval   # 运行 120 条 Agent 回归用例
 npm run audit  # 内部标识与密钥模式扫描
