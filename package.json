@@ -12,7 +12,8 @@
     "ingest": "node scripts/ingest.mjs raw/sample-metadata.md",
     "ingest:sql": "node scripts/ingest.mjs raw/sample-query.sql",
     "review": "node scripts/review-queue.mjs",
-    "eval": "node scripts/run-evals.mjs"
+    "eval": "node scripts/run-evals.mjs",
+    "demo": "node scripts/demo.mjs"
   },
   "engines": {
     "node": ">=22.5.0"

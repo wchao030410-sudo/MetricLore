@@ -95,6 +95,7 @@ npm run ingest:sql # 从公开 SQL 样例生成数据资产与字段候选
 npm run review # 生成候选知识 Review Queue
 npm run eval   # 运行 120 条 Agent 回归用例
 npm run audit  # 内部标识与密钥模式扫描
+npm run demo   # 输出 Wiki、本体、分析与安全拒答示例
 ```
 
 每次 Agent 回答都会返回 Skill、工具调用、来源和不含私有推理的 `publicTrace`。Web 界面的“Agent Trace”和“知识本体”页面可直接查看这些结构。

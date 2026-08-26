@@ -27,6 +27,8 @@ test("loads declarative skills and executes a traced definition workflow", async
   assert.equal(result.status, "verified");
   assert.ok(result.toolCalls.some((call) => call.name === "wiki_entity"));
   assert.ok(result.toolCalls.some((call) => call.name === "wiki_trace"));
+  assert.equal(result.validation.valid, true);
+  assert.ok(result.publicTrace.some((event) => event.tool === "validate_answer"));
   assert.ok(result.publicTrace.some((event) => event.state === "COMPLETED"));
   closeDatabase();
 });
