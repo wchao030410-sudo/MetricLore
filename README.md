@@ -72,6 +72,8 @@ docs/                        架构、来源审阅与本地化说明
 test/                        核心测试
 ```
 
+Agent、Ontology、LLM Wiki 和评测体系的后续设计见 [`docs/AGENT_EVOLUTION_ROADMAP.md`](docs/AGENT_EVOLUTION_ROADMAP.md)。路线图中的目标能力与门槛不代表当前版本已经实现。
+
 ## 安全边界
 
 - SQL 只由服务端语义层生成；前端和 LLM 不能提交任意 SQL。
