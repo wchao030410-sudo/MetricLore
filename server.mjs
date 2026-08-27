@@ -118,6 +118,48 @@ export function createAppServer(deps = defaultDeps()) {
     req.on("close", () => { clearInterval(heartbeat); ingestion.events.off("*", listener); });
   };
 
+  const streamRunEvents = (req, res, run) => {
+    const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
+    let lastSequence = conversations.eventSequenceForId(run.id, String(req.headers["last-event-id"] || ""));
+    let heartbeat;
+    let closed = false;
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
+      conversations.events.off("event", listener);
+    };
+    const end = () => {
+      cleanup();
+      if (!res.writableEnded) res.end();
+    };
+    const send = (event) => {
+      if (closed || event.sequence <= lastSequence) return;
+      lastSequence = event.sequence;
+      res.write(`id: ${event.id}\n`);
+      res.write(`event: ${event.type}\n`);
+      res.write(`data: ${JSON.stringify({ schemaVersion: "0.2", runId: run.id, sequence: event.sequence, at: event.createdAt, payload: event.payload })}\n\n`);
+      if (terminalEvents.has(event.type)) queueMicrotask(end);
+    };
+    const listener = (event) => {
+      if (event.runId === run.id) send(event);
+    };
+
+    res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "connection": "keep-alive", "x-accel-buffering": "no", "x-content-type-options": "nosniff" });
+    res.flushHeaders?.();
+    conversations.events.on("event", listener);
+    for (const event of conversations.eventsAfter(run.id, lastSequence)) {
+      send(event);
+      if (closed || terminalEvents.has(event.type)) break;
+    }
+    if (!closed) {
+      const latest = conversations.getRun(run.id);
+      if (["completed", "failed", "cancelled"].includes(latest?.status) && !conversations.eventsAfter(run.id, lastSequence).length) end();
+      else heartbeat = setInterval(() => { if (!res.writableEnded) res.write(": heartbeat\n\n"); }, 15000);
+    }
+    req.on("close", cleanup);
+  };
+
   return createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     try {
@@ -157,16 +199,18 @@ export function createAppServer(deps = defaultDeps()) {
       }
       if (req.method === "POST" && conversationMessages) {
         const payload = await body(req);
-        const result = await conversations.submitMessage(decodeURIComponent(conversationMessages[1]), payload.content, { contextPatch: payload.contextPatch });
-        return ok(res, 200, result);
+        const result = await conversations.submitMessage(decodeURIComponent(conversationMessages[1]), payload.content, {
+          contextPatch: payload.contextPatch,
+          defer: true,
+          idempotencyKey: req.headers["idempotency-key"],
+        });
+        return ok(res, 202, result);
       }
       if (req.method === "GET" && runEvents) {
         const run = conversations.getRun(decodeURIComponent(runEvents[2]));
         if (!run) return err(res, 404, "NOT_FOUND", "运行不存在");
-        res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "connection": "keep-alive", "x-content-type-options": "nosniff" });
-        for (const event of run.events) res.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify({ schemaVersion: "0.2", runId: run.id, sequence: event.sequence, ...event.payload })}\n\n`);
-        res.end();
-        return;
+        if (run.conversationId !== decodeURIComponent(runEvents[1])) return err(res, 404, "NOT_FOUND", "运行不属于该会话");
+        return streamRunEvents(req, res, run);
       }
       if (req.method === "POST" && runCancel) {
         const run = conversations.cancelRun(decodeURIComponent(runCancel[1]));
@@ -175,12 +219,12 @@ export function createAppServer(deps = defaultDeps()) {
       }
       if (req.method === "POST" && runClarify) {
         const payload = await body(req);
-        const result = await conversations.resolveClarification(decodeURIComponent(runClarify[1]), { optionId: payload.optionId });
-        return ok(res, 200, result);
+        const result = await conversations.resolveClarification(decodeURIComponent(runClarify[1]), { optionId: payload.optionId, defer: true });
+        return ok(res, 202, result);
       }
       if (req.method === "POST" && messageRetry) {
-        const result = await conversations.retryMessage(decodeURIComponent(messageRetry[1]));
-        return ok(res, 200, result);
+        const result = await conversations.retryMessage(decodeURIComponent(messageRetry[1]), { defer: true });
+        return ok(res, 202, result);
       }
       if (req.method === "GET" && conversationDetail) {
         const conversation = conversations.getConversation(decodeURIComponent(conversationDetail[1]));

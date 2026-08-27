@@ -25,12 +25,12 @@
       <div class="suggestions">
         <button>近14天收入趋势怎么样？</button><button>按地区看订单量</button><button>客单价的口径是什么？</button><button>语义层为什么禁止模型直接拼 SQL？</button>
       </div>
-      <div id="conversation" class="conversation">
-        <article class="assistant"><div class="avatar">ML</div><div><strong>MetricLore</strong><p>你好。你可以问指标定义、经营数据或趋势分析。所有数据查询都会经过语义层，并保留可追溯证据。</p></div></article>
+      <div id="conversation" class="conversation" aria-live="polite">
+        <article class="assistant welcome-message"><div class="avatar">ML</div><div><strong>MetricLore</strong><p>你好。你可以问指标定义、经营数据或趋势分析。所有数据查询都会经过语义层，并实时展示可追溯的公开执行过程。</p></div></article>
       </div>
       <form id="chat-form"><textarea id="message" maxlength="4000" placeholder="输入问题，例如：近 30 天收入趋势如何？"></textarea><button type="submit">发送</button></form>
     </section>
-    <section id="trace" class="page"><header><p>Agent Runtime</p><h1>执行轨迹</h1><span>展示已公开的 Skill、工具、范围和证据；不展示模型私有推理。</span></header><div id="trace-content" class="panel"><p>发起一次问答后，这里会显示其执行轨迹。</p></div><div id="skill-grid" class="grid compact"></div></section>
+    <section id="trace" class="page"><header><p>Agent Runtime</p><h1>运行总览</h1><span>问答页中的每条回答都带有实时轨迹；这里保留最近一次运行的完整总览。</span></header><div id="trace-content" class="panel"><p>发起一次问答后，这里会显示其执行轨迹。</p></div><div id="skill-grid" class="grid compact"></div></section>
     <section id="metrics" class="page"><header><p>Metric Catalog</p><h1>指标目录</h1><span>统一管理名称、口径、类型与格式。</span></header><div id="metric-grid" class="grid"></div></section>
     <section id="semantic" class="page"><header><p>Semantic Layer</p><h1>语义模型</h1><span>业务概念与物理字段之间的受控映射。</span></header><div id="semantic-content"></div></section>
     <section id="ontology" class="page"><header><p>LLM Wiki Ontology</p><h1>知识本体</h1><span>指标、业务过程、维度、数据资产、规则和来源之间的可追踪关系。</span></header><div id="ontology-summary" class="panel"></div><div id="ontology-grid" class="grid"></div></section>

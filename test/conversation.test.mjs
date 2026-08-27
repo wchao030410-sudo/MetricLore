@@ -92,8 +92,11 @@ test("ambiguous data question asks for clarification and resumes", async () => {
   assert.ok(first.assistantMessage.content.includes("请选择"));
 
   const resumed = await conversations.resolveClarification(first.run.id, { optionId: "revenue" });
+  assert.equal(resumed.run.id, first.run.id);
   assert.equal(resumed.run.capability, "data");
   assert.deepEqual(resumed.run.contextAfter.metrics, ["revenue"]);
+  assert.equal(resumed.run.events.filter((event) => event.type === "run.started").length, 1);
+  assert.ok(resumed.run.events.some((event) => event.type === "clarification.resolved"));
   close();
 });
 

@@ -46,6 +46,17 @@ async function waitForJob(base, jobId) {
   throw new Error("任务未在超时内完成");
 }
 
+async function waitForRun(base, conversationId, runId) {
+  for (let i = 0; i < 100; i += 1) {
+    const response = await fetch(`${base}/api/conversations/${conversationId}`);
+    const conversation = (await response.json()).data.conversation;
+    const run = conversation.runs.find((item) => item.id === runId);
+    if (["completed", "failed", "cancelled", "needs_clarification"].includes(run?.status)) return run;
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, 10));
+  }
+  throw new Error("运行未在超时内完成");
+}
+
 test("HTTP ingestion endpoints accept multipart upload and expose candidates", async () => {
   const deps = buildDeps();
   const server = createAppServer(deps);
@@ -136,11 +147,16 @@ test("HTTP conversation API persists multi-turn dialogue", async () => {
     assert.equal(created.status, 201);
     const convId = (await created.json()).data.conversation.id;
 
-    const post = (content) => fetch(`${base}/api/conversations/${convId}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) });
+    const post = async (content) => {
+      const response = await fetch(`${base}/api/conversations/${convId}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) });
+      assert.equal(response.status, 202);
+      const submitted = (await response.json()).data;
+      return waitForRun(base, convId, submitted.run.id);
+    };
     await post("近 14 天收入怎么样？");
-    const follow = await (await post("那按地区拆一下。")).json();
-    assert.equal(follow.data.run.contextAfter.metrics[0], "revenue");
-    assert.deepEqual(follow.data.run.contextAfter.dimensions, ["region"]);
+    const follow = await post("那按地区拆一下。");
+    assert.equal(follow.contextAfter.metrics[0], "revenue");
+    assert.deepEqual(follow.contextAfter.dimensions, ["region"]);
 
     const detail = await (await fetch(`${base}/api/conversations/${convId}`)).json();
     assert.equal(detail.data.conversation.messages.length, 4);

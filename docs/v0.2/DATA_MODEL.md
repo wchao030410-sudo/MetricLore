@@ -25,6 +25,17 @@ SQLite 保存运行状态；Markdown 保存已发布 Wiki 正文。
 
 ## 3. 会话与 Agent Run
 
+### idempotency_keys
+
+| 字段 | 类型 | 约束 |
+| --- | --- | --- |
+| scope | TEXT | 与 key 组成主键 |
+| key | TEXT | `Idempotency-Key`，最长 200 字符 |
+| response_json | TEXT | 首次创建返回的稳定响应 |
+| created_at | TEXT | 非空 |
+
+消息创建按会话划分 scope。相同 key 的网络重试返回同一组消息和 Run，不重复执行 Agent。
+
 ### conversations
 
 | 字段 | 类型 | 约束 |

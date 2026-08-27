@@ -107,6 +107,8 @@ Response `202`：
 
 同一个 `Idempotency-Key` 返回同一组消息和 Run。
 
+服务端持久化用户消息、待生成的 Assistant 消息和 `queued` Run 后立即返回；Agent 在后台执行，客户端随后订阅 `eventsUrl`。因此该端点不等待回答生成完成。
+
 ### POST /api/runs/:runId/cancel
 
 将可取消的 Run 标记为 `cancelled`，工具通过 AbortSignal 接收取消。已提交的数据查询结果保持只读证据记录。
@@ -153,6 +155,8 @@ data: {"schemaVersion":"0.2","runId":"run_<uuid>","sequence":4,"at":"2026-08-27T
 | `answer.delta` | delta、offset | 是 |
 | `validation.completed` | valid、findings、evidenceCount | 是 |
 | `clarification.required` | prompt、options、context | 是 |
+| `clarification.resolved` | optionId | 是 |
+| `run.fallback` | reason | 是 |
 | `run.completed` | assistantMessageId、status、contextAfter | 是 |
 | `run.failed` | error envelope | 是 |
 | `run.cancelled` | completedStepCount | 是 |
@@ -160,6 +164,8 @@ data: {"schemaVersion":"0.2","runId":"run_<uuid>","sequence":4,"at":"2026-08-27T
 `plan.created` 和工具事件只包含可公开、可验证的信息。`publicArgs` 过滤密钥、原始文件全文、SQL 和私有提示词。
 
 Terminal event：`run.completed`、`run.failed`、`run.cancelled`。发送 Terminal event 后关闭 SSE。
+
+`clarification.required` 不是 Terminal event。连接可以在等待用户选择期间保持；`clarification.resolved` 后同一个 Run 继续增加 sequence。`run.fallback` 表示 LLM 路径不可用后切换到确定性执行，不代表运行失败。
 
 ## 4. Ingestion API
 
