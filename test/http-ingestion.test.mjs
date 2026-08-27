@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { MetricLoreAgent } from "../lib/agent.mjs";
@@ -21,10 +21,11 @@ function buildDeps() {
   const ontology = new Ontology();
   const semantic = new SemanticLayer();
   const skills = new SkillRegistry();
-  const wiki = new WikiIndex(undefined, ontology);
+  const wikiDir = mkdtempSync(resolve(tmpdir(), "ml-http-wiki-"));
+  const wiki = new WikiIndex(wikiDir, ontology);
   const agent = new MetricLoreAgent({ semantic, wiki, db, ontology, skills });
-  const ingestion = new IngestionService({ db, ontology });
-  return { db, semantic, ontology, skills, wiki, agent, ingestion };
+  const ingestion = new IngestionService({ db, ontology, wiki });
+  return { db, semantic, ontology, skills, wiki, wikiDir, agent, ingestion };
 }
 
 async function listen(server) {
@@ -76,6 +77,48 @@ test("HTTP ingestion endpoints accept multipart upload and expose candidates", a
     const jobsRes = await fetch(`${base}/api/knowledge/jobs`);
     const jobsBody = await jobsRes.json();
     assert.equal(jobsBody.data.jobs.length, 1);
+  } finally {
+    server.close();
+    closeDatabase();
+  }
+});
+
+test("HTTP review and publish endpoints complete the closed loop", async () => {
+  const deps = buildDeps();
+  const server = createAppServer(deps);
+  const base = await listen(server);
+  try {
+    const form = new FormData();
+    form.append("name", "闭环");
+    form.append("files", new Blob([mdEntity({ key: "metric-aov", title: "客单价", aliases: ["平均订单金额"], relations: [] })], { type: "text/markdown" }), "dict.md");
+    const created = await fetch(`${base}/api/knowledge/jobs`, { method: "POST", body: form });
+    const jobId = (await created.json()).data.job.id;
+    await waitForJob(base, jobId);
+
+    const candidatesRes = await fetch(`${base}/api/knowledge/jobs/${jobId}/candidates`);
+    const candidate = (await candidatesRes.json()).data.candidates[0];
+
+    // PATCH 编辑
+    const patched = await fetch(`${base}/api/knowledge/candidates/${candidate.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ revision: candidate.revision, patch: { definition: "收入除以订单量" } }) });
+    assert.equal(patched.status, 200);
+    const patchedCandidate = (await patched.json()).data.candidate;
+    assert.equal(patchedCandidate.revision, candidate.revision + 1);
+
+    // review approve
+    const review = await fetch(`${base}/api/knowledge/candidates/${candidate.id}/review`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ revision: patchedCandidate.revision, decision: "approve" }) });
+    assert.equal((await review.json()).data.candidate.status, "approved");
+
+    // publish
+    const publish = await fetch(`${base}/api/knowledge/jobs/${jobId}/publish`, { method: "POST" });
+    const publication = (await publish.json()).data.publication;
+    assert.equal(publication.summary.created, 1);
+    assert.ok(existsSync(join(deps.wikiDir, "metrics", "metric-aov.md")));
+    assert.ok(readFileSync(join(deps.wikiDir, "metrics", "metric-aov.md"), "utf8").includes("客单价"));
+
+    // stale revision → 409
+    const conflict = await fetch(`${base}/api/knowledge/candidates/${candidate.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ revision: 1, patch: { title: "x" } }) });
+    assert.equal(conflict.status, 409);
+    assert.equal((await conflict.json()).error.code, "CANDIDATE_REVISION_CONFLICT");
   } finally {
     server.close();
     closeDatabase();

@@ -86,7 +86,7 @@ function defaultDeps() {
   const skills = new SkillRegistry();
   const wiki = new WikiIndex(undefined, ontology);
   const agent = new MetricLoreAgent({ semantic, wiki, db, ontology, skills });
-  const ingestion = new IngestionService({ db, ontology });
+  const ingestion = new IngestionService({ db, ontology, wiki });
   return { db, semantic, ontology, skills, wiki, agent, ingestion };
 }
 
@@ -141,7 +141,10 @@ export function createAppServer(deps = defaultDeps()) {
       const jobCandidates = url.pathname.match(/^\/api\/knowledge\/jobs\/([^/]+)\/candidates$/);
       const jobRetry = url.pathname.match(/^\/api\/knowledge\/jobs\/([^/]+)\/retry$/);
       const jobCancel = url.pathname.match(/^\/api\/knowledge\/jobs\/([^/]+)\/cancel$/);
+      const jobPublish = url.pathname.match(/^\/api\/knowledge\/jobs\/([^/]+)\/publish$/);
       const jobDetail = url.pathname.match(/^\/api\/knowledge\/jobs\/([^/]+)$/);
+      const batchReview = url.pathname.match(/^\/api\/knowledge\/candidates\/batch-review$/);
+      const candidateReview = url.pathname.match(/^\/api\/knowledge\/candidates\/([^/]+)\/review$/);
       const candidateDetail = url.pathname.match(/^\/api\/knowledge\/candidates\/([^/]+)$/);
 
       if (req.method === "POST" && url.pathname === "/api/knowledge/jobs") {
@@ -182,6 +185,27 @@ export function createAppServer(deps = defaultDeps()) {
         if (!candidate) return err(res, 404, "NOT_FOUND", "候选不存在");
         return ok(res, 200, { candidate });
       }
+      if (req.method === "PATCH" && candidateDetail) {
+        const payload = await body(req);
+        const candidate = ingestion.updateCandidate(decodeURIComponent(candidateDetail[1]), { revision: payload.revision, patch: payload.patch || {} });
+        return ok(res, 200, { candidate });
+      }
+      if (req.method === "POST" && batchReview) {
+        const payload = await body(req);
+        const results = ingestion.batchReview({ items: payload.items || [], decision: payload.decision, note: payload.note });
+        return ok(res, 200, { results });
+      }
+      if (req.method === "POST" && candidateReview) {
+        const payload = await body(req);
+        const candidate = ingestion.reviewCandidate(decodeURIComponent(candidateReview[1]), { revision: payload.revision, decision: payload.decision, note: payload.note, mergeTargetKey: payload.mergeTargetKey });
+        if (!candidate) return err(res, 404, "NOT_FOUND", "候选不存在");
+        return ok(res, 200, { candidate });
+      }
+      if (req.method === "POST" && jobPublish) {
+        const jobId = decodeURIComponent(jobPublish[1]);
+        const result = await ingestion.publishJob(jobId);
+        return ok(res, 200, { publication: result });
+      }
       if (req.method === "POST" && jobRetry) {
         const jobId = decodeURIComponent(jobRetry[1]);
         const payload = await body(req);
@@ -202,6 +226,7 @@ export function createAppServer(deps = defaultDeps()) {
       return json(res, 404, { error: "Not found" });
     } catch (error) {
       if (res.headersSent) { res.end(); return; }
+      if (error.code && error.status) return err(res, error.status, error.code, error.message, { retryable: error.code === "CANDIDATE_REVISION_CONFLICT" });
       return json(res, 400, { error: error.message || "Bad request" });
     }
   });
