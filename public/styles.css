@@ -233,6 +233,9 @@ code, pre { font-family: var(--mono); }
 .upload-zone p { color: var(--muted); font-size: 11px; line-height: 1.55; margin: 0; }
 .upload-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
 .hidden-input { height: 1px; opacity: 0; overflow: hidden; position: absolute; width: 1px; }
+.upload-preview { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; margin-top: 20px; padding: 18px 20px; }
+.upload-preview .field { margin-bottom: 12px; }
+.column-editor input, .column-editor select { background: #fff; border: 1px solid var(--line-dark); border-radius: 6px; font-size: 11px; min-height: 32px; padding: 5px 8px; width: 100%; }
 .mode-grid { display: grid; gap: 10px; grid-template-columns: repeat(2,1fr); margin-top: 14px; }
 .mode-option { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; display: block; padding: 14px; }
 .mode-option:has(input:checked) { border-color: var(--blue); box-shadow: inset 3px 0 var(--blue); }

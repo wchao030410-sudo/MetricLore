@@ -5,6 +5,7 @@ import { extname, resolve, sep } from "node:path";
 import { MetricLoreAgent } from "./lib/agent.mjs";
 import { loadEnv, ROOT } from "./lib/config.mjs";
 import { ConversationService } from "./lib/conversation.mjs";
+import { DataSourceService } from "./lib/data-source.mjs";
 import { openDatabase } from "./lib/database.mjs";
 import { EvaluationService } from "./lib/evaluation-service.mjs";
 import { parseMultipart } from "./lib/http/multipart.mjs";
@@ -91,13 +92,15 @@ function defaultDeps() {
   const ingestion = new IngestionService({ db, ontology, wiki });
   const conversations = new ConversationService({ db, agent, semantic });
   const evaluations = new EvaluationService({ db, semantic, wiki });
-  return { db, semantic, ontology, skills, wiki, agent, ingestion, conversations, evaluations };
+  const dataSources = new DataSourceService({ db });
+  return { db, semantic, ontology, skills, wiki, agent, ingestion, conversations, evaluations, dataSources };
 }
 
 export function createAppServer(deps = defaultDeps()) {
   const { db, semantic, ontology, skills, wiki, agent, ingestion, conversations } = deps;
   semantic.attachDatabase?.(db);
   const evaluations = deps.evaluations || new EvaluationService({ db, semantic, wiki });
+  const dataSources = deps.dataSources || new DataSourceService({ db });
 
   const streamJobEvents = (req, res, jobId) => {
     const snapshot = ingestion.getJob(jobId);
@@ -241,6 +244,46 @@ export function createAppServer(deps = defaultDeps()) {
         const payload = await body(req);
         const metric = semantic.registerMetric(payload, payload.modelId);
         return ok(res, 201, { metric, catalog: semantic.catalog(metric.modelId) });
+      }
+
+      // ---- v0.3 Data Workspace API ----
+      const dataSourceDetail = url.pathname.match(/^\/api\/data\/sources\/([^/]+)$/);
+      if (req.method === "POST" && url.pathname === "/api/data/sources/preview") {
+        const contentType = req.headers["content-type"] || "";
+        if (!contentType.includes("multipart/form-data")) return err(res, 415, "UNSUPPORTED_MEDIA_TYPE", "需要 multipart/form-data");
+        const raw = await rawBody(req, 50 * 1024 * 1024);
+        const { files } = parseMultipart(raw, contentType);
+        const file = files[0];
+        if (!file) return err(res, 400, "NO_FILE", "没有上传数据文件");
+        const preview = await dataSources.preview({ buffer: file.buffer, filename: file.filename });
+        return ok(res, 200, { preview });
+      }
+      if (req.method === "POST" && url.pathname === "/api/data/sources") {
+        const contentType = req.headers["content-type"] || "";
+        if (!contentType.includes("multipart/form-data")) return err(res, 415, "UNSUPPORTED_MEDIA_TYPE", "需要 multipart/form-data");
+        const raw = await rawBody(req, 50 * 1024 * 1024);
+        const { fields, files } = parseMultipart(raw, contentType);
+        const file = files[0];
+        if (!file) return err(res, 400, "NO_FILE", "没有上传数据文件");
+        let columns = [];
+        try { columns = fields.columns ? JSON.parse(fields.columns) : []; }
+        catch { return err(res, 400, "INVALID_COLUMNS", "columns 必须是 JSON 数组"); }
+        const source = await dataSources.create({ name: fields.name, buffer: file.buffer, filename: file.filename, columns });
+        return ok(res, 201, { source });
+      }
+      if (req.method === "GET" && url.pathname === "/api/data/sources") {
+        return ok(res, 200, { sources: dataSources.list() });
+      }
+      if (req.method === "GET" && dataSourceDetail) {
+        const source = dataSources.get(decodeURIComponent(dataSourceDetail[1]));
+        if (!source) return err(res, 404, "NOT_FOUND", "数据源不存在");
+        return ok(res, 200, { source });
+      }
+      if (req.method === "DELETE" && dataSourceDetail) {
+        const removed = dataSources.remove(decodeURIComponent(dataSourceDetail[1]));
+        if (!removed) return err(res, 404, "NOT_FOUND", "数据源不存在");
+        res.writeHead(204, { "x-content-type-options": "nosniff" });
+        return res.end();
       }
       if (req.method === "GET" && url.pathname === "/api/skills") return json(res, 200, { skills: skills.list() });
       if (req.method === "GET" && url.pathname === "/api/ontology") return json(res, 200, { schema: ontology.schema, entities: [...wiki.entities.values()].map((entity) => wiki.publicEntity(entity)) });

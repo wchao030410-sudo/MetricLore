@@ -1710,6 +1710,138 @@ async function renderSettings(token) {
   });
 }
 
+function dataRoleLabel(role) {
+  return { time: "时间", dimension: "维度", measure: "数值", attribute: "属性" }[role] || role;
+}
+
+async function renderDataSources(token) {
+  const shell = el("div", { class: "page-shell wide" }, loading());
+  $("#workspace").replaceChildren(shell);
+  try {
+    const result = await api("/api/data/sources");
+    if (token !== state.viewToken) return;
+    const sources = result.sources || [];
+    const fileInput = el("input", { class: "hidden-input", type: "file", accept: ".csv,.xlsx" });
+    const previewHost = el("div");
+    let currentFile = null;
+
+    const renderPreview = (preview) => {
+      const columnRows = preview.columns.map((column, index) => {
+        const nameInput = el("input", { value: column.name });
+        const typeSelect = el("select", {}, ["INTEGER", "REAL", "TEXT"].map((type) => el("option", { value: type, selected: type === column.type }, type)));
+        const roleSelect = el("select", {}, ["time", "dimension", "measure", "attribute"].map((role) => el("option", { value: role, selected: role === column.role }, dataRoleLabel(role))));
+        nameInput.addEventListener("input", () => { column.name = nameInput.value; });
+        typeSelect.addEventListener("change", () => { column.type = typeSelect.value; });
+        roleSelect.addEventListener("change", () => { column.role = roleSelect.value; });
+        return el("tr", {}, el("td", {}, `列 ${index + 1}`), el("td", {}, nameInput), el("td", {}, typeSelect), el("td", {}, roleSelect));
+      });
+      const previewTable = el("table", { class: "data-table" },
+        el("thead", {}, el("tr", {}, preview.columns.map((column) => el("th", {}, column.name)))),
+        el("tbody", {}, preview.preview.slice(0, 10).map((row) => el("tr", {}, row.map((cell) => el("td", {}, cell))))));
+      previewHost.replaceChildren(el("section", { class: "upload-preview" },
+        el("div", { class: "section-heading" }, el("h2", {}, "预览与调整"), el("small", {}, `${preview.totalRows} 行数据`)),
+        el("div", { class: "field" }, el("span", {}, "数据源名称"), el("input", { id: "source-name", value: preview.suggestedName })),
+        el("div", { class: "table-panel" }, el("table", { class: "work-table column-editor" },
+          el("thead", {}, el("tr", {}, ["", "列名", "类型", "角色"].map((head) => el("th", {}, head)))),
+          el("tbody", {}, columnRows))),
+        el("details", {}, el("summary", { class: "text-button" }, "查看前 10 行"), el("div", { class: "data-table-wrap" }, previewTable)),
+        el("div", { class: "editor-actions" },
+          action("取消", "button secondary", () => { previewHost.replaceChildren(); currentFile = null; }),
+          action("创建数据表", "button primary", async () => {
+            try {
+              const form = new FormData();
+              form.append("file", currentFile, currentFile.name);
+              form.append("name", $("#source-name", previewHost).value.trim());
+              form.append("columns", JSON.stringify(preview.columns));
+              const created = await api("/api/data/sources", { method: "POST", body: form });
+              toast(`数据源“${created.source.name}”已创建`);
+              navigate(`/data/sources/${encodeURIComponent(created.source.id)}`);
+            } catch (error) { toast(error.message); }
+          }))));
+    };
+
+    const startPreview = async (file) => {
+      currentFile = file;
+      const data = new FormData();
+      data.append("file", file, file.name);
+      const { preview } = await api("/api/data/sources/preview", { method: "POST", body: data });
+      renderPreview(preview);
+    };
+    const handleFile = (file) => { if (file) startPreview(file).catch((error) => toast(error.message)); };
+    fileInput.addEventListener("change", () => handleFile(fileInput.files[0]));
+
+    const uploadZone = el("div", { class: "upload-zone", tabindex: "0" },
+      el("span", { class: "upload-glyph" }, "▦"), el("h2", {}, "上传你的数据"),
+      el("p", {}, "支持 CSV 或 Excel（XLSX），自动推断列类型与时间字段"),
+      el("p", {}, "最多 100,000 行 · 数据仅保存在本地"),
+      el("div", { class: "upload-actions" },
+        action("选择文件", "button primary", () => fileInput.click()),
+        action("体验示例数据", "button secondary", async () => {
+          try {
+            const response = await fetch("/examples/data/sample-sales.csv");
+            const text = await response.text();
+            handleFile(new File([text], "sample-sales.csv", { type: "text/csv" }));
+          } catch (error) { toast(error.message); }
+        })),
+      fileInput);
+    ["dragenter", "dragover"].forEach((name) => uploadZone.addEventListener(name, (event) => { event.preventDefault(); uploadZone.classList.add("dragging"); }));
+    ["dragleave", "drop"].forEach((name) => uploadZone.addEventListener(name, (event) => { event.preventDefault(); uploadZone.classList.remove("dragging"); }));
+    uploadZone.addEventListener("drop", (event) => handleFile(event.dataTransfer.files[0]));
+
+    const sourceTable = (items) => items.length ? el("div", { class: "table-panel" }, el("table", { class: "work-table" },
+      el("thead", {}, el("tr", {}, ["数据源", "类型", "行数", "列数", "语义模型", "创建时间"].map((head) => el("th", {}, head)))),
+      el("tbody", {}, items.map((source) => el("tr", {},
+        el("td", {}, el("button", { class: "row-link", type: "button", onClick: () => navigate(`/data/sources/${encodeURIComponent(source.id)}`) },
+          el("strong", {}, source.name), el("small", {}, source.table)),
+        el("td", {}, source.kind === "builtin" ? "内置" : "上传"),
+        el("td", {}, source.rowCount), el("td", {}, source.columnCount),
+        el("td", {}, source.modelCount > 0 ? `${source.modelCount} 个` : "—"),
+        el("td", {}, fmtDate(source.createdAt, true)))))))) : emptyState("还没有数据源", "上传 CSV 或 Excel，或点击「体验示例数据」快速走通。", "▦");
+
+    shell.replaceChildren(pageHeader("数据工作区", "数据", "上传自己的数据，注册自己的语义模型，让 AI 为你问数。",
+      [action("刷新", "button secondary", () => renderRoute())]),
+      uploadZone,
+      el("div", { class: "section-heading" }, el("h2", {}, "数据源"), el("small", {}, `${sources.length} 个`)),
+      sourceTable(sources),
+      previewHost);
+    defaultContext("数据", "上传 CSV/Excel 建表，随后可在语义模型页基于该表注册模型与指标。");
+  } catch (error) {
+    if (token === state.viewToken) shell.replaceChildren(errorState(error));
+  }
+}
+
+async function renderDataSourceDetail(sourceId, token) {
+  const shell = el("div", { class: "page-shell wide" }, loading());
+  $("#workspace").replaceChildren(shell);
+  try {
+    const result = await api(`/api/data/sources/${encodeURIComponent(sourceId)}`);
+    if (token !== state.viewToken) return;
+    const source = result.source;
+    const columns = el("div", { class: "table-panel" }, el("table", { class: "work-table" },
+      el("thead", {}, el("tr", {}, ["列名", "类型", "角色"].map((head) => el("th", {}, head)))),
+      el("tbody", {}, source.columns.map((column) => el("tr", {},
+        el("td", {}, el("code", {}, column.name)), el("td", {}, column.type), el("td", {}, dataRoleLabel(column.role)))))));
+    const previewRows = el("div", { class: "table-panel" }, el("table", { class: "work-table" },
+      el("thead", {}, el("tr", {}, source.columns.map((column) => el("th", {}, column.name)))),
+      el("tbody", {}, source.preview.slice(0, 20).map((row) => el("tr", {}, row.map((cell) => el("td", {}, cell)))))));
+    shell.replaceChildren(pageHeader("数据源", source.name, `${source.table} · ${source.rowCount} 行 · ${source.kind === "builtin" ? "内置数据源" : "用户上传"}`,
+      [
+        action("基于此表创建语义模型", "button primary", () => navigate(`/data/semantic?table=${encodeURIComponent(source.table)}`)),
+        source.kind !== "builtin" ? action("删除数据源", "button danger", async () => {
+          try { await api(`/api/data/sources/${source.id}`, { method: "DELETE" }); toast("数据源已删除"); renderRoute(); }
+          catch (error) { toast(error.message); }
+        }) : null,
+      ]),
+      el("div", { class: "section-heading" }, el("h2", {}, "列结构"), el("small", {}, `${source.columns.length} 列`)),
+      columns,
+      el("div", { class: "section-heading" }, el("h2", {}, "数据预览"), el("small", {}, "前 20 行")),
+      previewRows);
+    defaultContext("数据源", `${source.name} · ${source.rowCount} 行`);
+  } catch (error) {
+    if (token === state.viewToken) shell.replaceChildren(errorState(error));
+  }
+}
+
 async function renderRoute() {
   const { path, query } = parseRoute();
   const token = ++state.viewToken;
@@ -1732,6 +1864,8 @@ async function renderRoute() {
     else if (path === "/knowledge/wiki") await renderWikiExplorer(null, token);
     else if ((match = path.match(/^\/knowledge\/wiki\/([^/]+)$/))) await renderWikiExplorer(decodeURIComponent(match[1]), token);
     else if (path === "/knowledge/ontology") await renderOntologyGraph(query, token);
+    else if (path === "/data/sources") await renderDataSources(token);
+    else if ((match = path.match(/^\/data\/sources\/([^/]+)$/))) await renderDataSourceDetail(decodeURIComponent(match[1]), token);
     else if (path === "/data/metrics") await renderMetrics(token);
     else if (path === "/data/semantic") await renderSemantic(token);
     else if (path === "/evaluate") await renderEvaluation(token);
