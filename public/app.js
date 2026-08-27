@@ -28,6 +28,18 @@ const TYPE_COLORS = {
   Metric: "#4f7cff", Dimension: "#22a486", BusinessProcess: "#d99a26", BusinessDomain: "#d06452",
   DataAsset: "#9d70e4", DataField: "#6f8fa8", BusinessRule: "#e16d9a", Dashboard: "#4fa7b8", Source: "#8a9189",
 };
+const STATUS_LABELS = {
+  completed: "已完成", verified: "已验证", approved: "已批准", published: "已发布",
+  running: "运行中", planning: "规划中", queued: "排队中", validating: "校验中",
+  parsing: "解析中", extracting: "抽取中", publishing: "发布中",
+  needs_review: "待审核", awaiting_review: "待审核", needs_clarification: "待澄清",
+  failed: "失败", cancelled: "已取消", rejected: "已驳回",
+  extracted: "已抽取", merged: "已合并", accepted: "已接收", parsed: "已解析",
+  streaming: "生成中", pending: "待处理", active: "进行中", archived: "已归档", unknown: "未知",
+};
+function statusText(status = "unknown") {
+  return STATUS_LABELS[status] || String(status).replaceAll("_", " ");
+}
 
 const state = {
   health: null, catalog: null, ontology: null, skills: null, conversations: [],
@@ -122,7 +134,7 @@ function escapeSelector(value) {
 }
 
 function statusPill(status = "unknown") {
-  return el("span", { class: "status-pill", "data-status": status }, String(status).replaceAll("_", " "));
+  return el("span", { class: "status-pill", "data-status": status }, statusText(status));
 }
 
 function pageHeader(eyebrow, title, description, actions = []) {
@@ -194,14 +206,14 @@ function section(title, ...content) {
   return el("section", { class: "context-section" }, el("h3", {}, title), content);
 }
 
-function openContext({ eyebrow = "CONTEXT", title = "Details", content = [] }) {
+function openContext({ eyebrow = "上下文", title = "详情", content = [] }) {
   $("#context-eyebrow").textContent = eyebrow;
   $("#context-title").textContent = title;
   $("#context-body").replaceChildren(...(Array.isArray(content) ? content : [content]));
   if (matchMedia("(max-width: 1180px)").matches) document.body.classList.add("context-open");
 }
 
-function defaultContext(title = "Workspace", copy = "选择执行轨迹、证据、实体或文件，查看与当前任务相关的细节。") {
+function defaultContext(title = "工作区", copy = "选择执行轨迹、证据、实体或文件，查看与当前任务相关的细节。") {
   openContext({
     eyebrow: "CONTEXT", title,
     content: el("div", { class: "context-empty" }, el("span", {}, "⌁"), el("h3", {}, "上下文会出现在这里"), el("p", {}, copy)),
@@ -298,40 +310,40 @@ async function renderAskHome(token) {
 
   const hero = el("section", { class: "hero-grid" });
   const lead = el("div", { class: "hero-card" },
-    el("small", { class: "eyebrow" }, "ONTOLOGY-GROUNDED DATA AGENT"),
-    el("h1", {}, "Ask data. Inspect every step."),
+    el("small", { class: "eyebrow" }, "基于本体与语义层的数据智能体"),
+    el("h1", {}, "问数据，看清每一步"),
     el("p", {}, "从业务问题出发，沿语义层、Skill、工具与知识证据完成问数和分析。每次运行都留下可复核的公开轨迹。"),
     el("div", { class: "hero-actions" },
-      action("Start an analysis  →", "button primary", () => createConversation()),
-      action("Build your Wiki", "button secondary", () => navigate("/knowledge/builder"))));
+      action("开始分析 →", "button primary", () => createConversation()),
+      action("构建知识库", "button secondary", () => navigate("/knowledge/builder"))));
   const side = el("div", { class: "hero-side" },
     el("button", { class: "path-card", type: "button", onClick: () => createConversation("近 14 天收入趋势怎么样？") },
-      el("span", {}, "01"), el("h2", {}, "Ask sample data"), el("p", {}, "使用内置合成数据体验多轮问数、分析与证据追踪。")),
+      el("span", {}, "01"), el("h2", {}, "体验示例数据"), el("p", {}, "使用内置合成数据体验多轮问数、分析与证据追踪。")),
     el("button", { class: "path-card amber", type: "button", onClick: () => navigate("/knowledge/builder") },
-      el("span", {}, "02"), el("h2", {}, "Build a Wiki"), el("p", {}, "导入文件，审核候选实体，发布为 Agent 可检索的本体知识。")));
+      el("span", {}, "02"), el("h2", {}, "构建知识库"), el("p", {}, "导入文件，审核候选实体，发布为 Agent 可检索的本体知识。")));
   hero.append(lead, side);
 
-  const mode = state.health?.llmConfigured ? "LLM" : "Deterministic";
+  const mode = state.health?.llmConfigured ? "LLM" : "确定性模式";
   shell.append(hero, el("section", { class: "stat-grid" },
-    stat("RUN MODE", mode, state.health?.llmConfigured ? "model connected" : "local governed path"),
-    stat("WIKI PAGES", state.health?.wikiDocuments ?? "—", "indexed locally"),
-    stat("ENTITIES", state.health?.wikiEntities ?? "—", "ontology nodes"),
-    stat("RECENT JOBS", jobs.length, jobs[0] ? `latest · ${jobs[0].status}` : "ready for import")));
+    stat("运行模式", mode, state.health?.llmConfigured ? "已连接模型" : "本地受治理路径"),
+    stat("知识页面", state.health?.wikiDocuments ?? "—", "本地索引"),
+    stat("实体", state.health?.wikiEntities ?? "—", "本体节点"),
+    stat("最近任务", jobs.length, jobs[0] ? `最近 · ${statusText(jobs[0].status)}` : "可开始导入")));
 
   const samples = [
-    ["DATA", "近 14 天收入趋势怎么样？"], ["ANALYSIS", "那按地区拆一下。"],
-    ["DEFINITION", "客单价的口径是什么？"], ["KNOWLEDGE", "语义层为什么限制任意 SQL？"],
+    ["数据", "近 14 天收入趋势怎么样？"], ["分析", "那按地区拆一下。"],
+    ["口径", "客单价的口径是什么？"], ["知识", "语义层为什么限制任意 SQL？"],
   ];
-  shell.append(el("div", { class: "section-heading" }, el("h2", {}, "Start with a real task"), el("small", {}, "One click creates a persistent thread")),
+  shell.append(el("div", { class: "section-heading" }, el("h2", {}, "从一个真实任务开始"), el("small", {}, "点击一次即可创建持久会话")),
     el("div", { class: "sample-grid" }, samples.map(([kind, question]) =>
       el("button", { class: "sample-card", type: "button", onClick: () => createConversation(question) },
         el("small", {}, kind), el("p", {}, question)))));
 
-  defaultContext("Ask", "首页展示两条完整路径：直接体验问数，或先构建自己的 Wiki。");
+  defaultContext("问答", "首页展示两条完整路径：直接体验问数，或先构建自己的知识库。");
 }
 
 function scopeBar(context = {}) {
-  const bar = el("div", { class: "scope-bar" }, el("strong", {}, "CURRENT SCOPE"));
+  const bar = el("div", { class: "scope-bar" }, el("strong", {}, "当前范围"));
   const metrics = context.metrics || [];
   const dimensions = context.dimensions || [];
   const filters = context.filters || {};
@@ -343,14 +355,14 @@ function scopeBar(context = {}) {
     bar.append(el("span", { class: "scope-chip" }, "等待第一次提问"));
   }
   bar.addEventListener("click", () => openContext({
-    eyebrow: "CONVERSATION SCOPE", title: "Current context",
+    eyebrow: "会话范围", title: "当前上下文",
     content: [
-      section("Metrics", contextList(metrics.map((key) => state.catalog?.metrics?.[key]?.label || key).length ? metrics.map((key) => state.catalog?.metrics?.[key]?.label || key) : ["尚未选择"])),
-      section("Dimensions & filters", contextList([
+      section("指标", contextList(metrics.map((key) => state.catalog?.metrics?.[key]?.label || key).length ? metrics.map((key) => state.catalog?.metrics?.[key]?.label || key) : ["尚未选择"])),
+      section("维度与筛选", contextList([
         ...dimensions.map((key) => state.catalog?.dimensions?.[key]?.label || key),
         ...Object.entries(filters).map(([key, value]) => `${key}: ${[].concat(value).join("、")}`),
       ].length ? [...dimensions.map((key) => state.catalog?.dimensions?.[key]?.label || key), ...Object.entries(filters).map(([key, value]) => `${key}: ${[].concat(value).join("、")}`)] : ["尚未选择"])),
-      section("Time range", el("p", {}, context.timeRange ? `${context.timeRange.startDate} 至 ${context.timeRange.endDate}` : "由问题或默认范围确定")),
+      section("时间范围", el("p", {}, context.timeRange ? `${context.timeRange.startDate} 至 ${context.timeRange.endDate}` : "由问题或默认范围确定")),
     ],
   }));
   return bar;
@@ -379,8 +391,8 @@ function dataView(data) {
     || columns.find((key) => rows.some((row) => Number.isFinite(Number(row[key]))));
   const xKey = columns.find((key) => key !== numeric);
   const view = el("section", { class: "data-view" },
-    el("div", { class: "data-view-header" }, el("strong", {}, `Data view · ${rows.length} rows`), el("small", {}, numeric || "result"),
-      action("CSV", "message-action", () => download("metriclore-data.csv", rowsToCsv(data), "text/csv"))));
+    el("div", { class: "data-view-header" }, el("strong", {}, `数据视图 · ${rows.length} 行`), el("small", {}, numeric || "结果"),
+      action("导出 CSV", "message-action", () => download("metriclore-data.csv", rowsToCsv(data), "text/csv"))));
   if (numeric && rows.length > 1) {
     const width = 680; const height = 170; const pad = { left: 32, right: 16, top: 16, bottom: 28 };
     const values = rows.map((row) => Number(row[numeric])).filter(Number.isFinite);
@@ -431,17 +443,17 @@ function dataView(data) {
 }
 
 function showRunContext(run) {
-  const tools = (run.toolCalls || []).map((call) => `${call.sequence}. ${call.skillName || "skill"} → ${call.toolName} · ${call.status}`);
+  const tools = (run.toolCalls || []).map((call) => `${call.sequence}. ${call.skillName || "skill"} → ${call.toolName} · ${statusText(call.status)}`);
   const evidence = (run.evidence || []).map((item) => item.sourceKey || item.sourcePath || item.sourceType);
   openContext({
-    eyebrow: "AGENT RUN", title: run.plan?.skill || run.capability || "Run",
+    eyebrow: "Agent 运行", title: run.plan?.skill || run.capability || "运行",
     content: [
-      section("Goal", el("p", {}, run.plan?.goal || "等待计划生成")),
-      section("Status", statusPill(run.status)),
-      section("Scope used", el("pre", { class: "context-code" }, JSON.stringify(run.contextAfter || run.contextBefore || {}, null, 2))),
-      section("Tool calls", contextList(tools.length ? tools : ["尚未调用工具"])),
-      section("Evidence", contextList(evidence.length ? evidence : ["尚未绑定来源"])),
-      section("Validation", el("p", {}, run.validation ? (run.validation.valid ? `通过 · ${run.validation.evidenceCount ?? evidence.length} 条证据` : (run.validation.findings || []).join("、")) : "等待校验")),
+      section("目标", el("p", {}, run.plan?.goal || "等待计划生成")),
+      section("状态", statusPill(run.status)),
+      section("已用范围", el("pre", { class: "context-code" }, JSON.stringify(run.contextAfter || run.contextBefore || {}, null, 2))),
+      section("工具调用", contextList(tools.length ? tools : ["尚未调用工具"])),
+      section("证据", contextList(evidence.length ? evidence : ["尚未绑定来源"])),
+      section("校验", el("p", {}, run.validation ? (run.validation.valid ? `通过 · ${run.validation.evidenceCount ?? evidence.length} 条证据` : (run.validation.findings || []).join("、")) : "等待校验")),
     ],
   });
 }
@@ -449,18 +461,18 @@ function showRunContext(run) {
 async function showEvidence(evidence) {
   if (evidence.sourceType === "query" || String(evidence.sourceKey).startsWith("query:")) {
     openContext({
-      eyebrow: "QUERY EVIDENCE", title: evidence.sourceKey || "Governed query",
-      content: [section("Locator", el("pre", { class: "context-code" }, JSON.stringify(evidence.locator || {}, null, 2))),
-        section("Boundary", el("p", {}, "结果由注册指标、维度、日期范围和参数化筛选生成。这里展示公开查询范围，不展示内部 SQL。"))],
+      eyebrow: "查询证据", title: evidence.sourceKey || "受治理查询",
+      content: [section("定位", el("pre", { class: "context-code" }, JSON.stringify(evidence.locator || {}, null, 2))),
+        section("查询边界", el("p", {}, "结果由注册指标、维度、日期范围和参数化筛选生成。这里展示公开查询范围，不展示内部 SQL。"))],
     });
     return;
   }
   const key = evidence.sourceKey;
   if (!key || key.startsWith("wiki:")) {
-    openContext({ eyebrow: "WIKI EVIDENCE", title: evidence.sourcePath || "Wiki", content: section("Locator", el("p", {}, evidence.sourcePath || "wiki/")) });
+    openContext({ eyebrow: "知识证据", title: evidence.sourcePath || "知识库", content: section("定位", el("p", {}, evidence.sourcePath || "wiki/")) });
     return;
   }
-  openContext({ eyebrow: "SOURCE", title: "正在读取…", content: loading() });
+  openContext({ eyebrow: "来源", title: "正在读取…", content: loading() });
   try {
     const [pageResult, sourceResult] = await Promise.all([
       api(`/api/wiki/pages/${encodeURIComponent(key)}`),
@@ -468,14 +480,14 @@ async function showEvidence(evidence) {
     ]);
     const page = pageResult.page; const source = sourceResult.source;
     openContext({
-      eyebrow: "SOURCE LOCATOR", title: page.title,
+      eyebrow: "来源定位", title: page.title,
       content: [
-        section("Published page", el("p", {}, page.path), action("Open Wiki page", "button secondary", () => navigate(`/knowledge/wiki/${encodeURIComponent(page.key)}`))),
-        section("Original source", el("p", {}, source.path), el("pre", { class: "context-code" }, source.content || "来源文件当前不可读取；页面保留了路径定位。")),
+        section("已发布页面", el("p", {}, page.path), action("打开知识页", "button secondary", () => navigate(`/knowledge/wiki/${encodeURIComponent(page.key)}`))),
+        section("原始来源", el("p", {}, source.path), el("pre", { class: "context-code" }, source.content || "来源文件当前不可读取；页面保留了路径定位。")),
       ],
     });
   } catch (error) {
-    openContext({ eyebrow: "SOURCE", title: "来源读取失败", content: errorState(error) });
+    openContext({ eyebrow: "来源", title: "来源读取失败", content: errorState(error) });
   }
 }
 
@@ -527,17 +539,17 @@ function assistantMessage(message, run) {
     el("div", { class: "message-card" },
       el("header", { class: "message-meta" },
         el("div", {}, el("strong", {}, "MetricLore"), statusPill(run.status)),
-        action("Open run ↗", "message-action", () => showRunContext(run))),
+        action("查看运行 ↗", "message-action", () => showRunContext(run))),
       content,
       clarificationBox(run),
       dataView(run.data),
       details,
       followUpSuggestions(run),
       el("div", { class: "message-tools" },
-        (run.evidence || []).map((evidence) => action(`▣ ${evidence.sourcePath || evidence.sourceKey || "evidence"}`, "evidence-button", () => showEvidence(evidence))),
-        action("Export .md", "message-action", () => download(`run-${run.id.slice(0, 8)}.md`, message.content || "", "text/markdown")),
-        ACTIVE_RUN.has(run.status) ? action("Stop", "message-action", () => cancelRun(run.id)) : null,
-        ["completed", "failed", "cancelled"].includes(run.status) ? action("Retry", "message-action", () => retryRun(run.userMessageId)) : null)));
+        (run.evidence || []).map((evidence) => action(`▣ ${evidence.sourcePath || evidence.sourceKey || "证据"}`, "evidence-button", () => showEvidence(evidence))),
+        action("导出 Markdown", "message-action", () => download(`run-${run.id.slice(0, 8)}.md`, message.content || "", "text/markdown")),
+        ACTIVE_RUN.has(run.status) ? action("停止", "message-action", () => cancelRun(run.id)) : null,
+        ["completed", "failed", "cancelled"].includes(run.status) ? action("重试", "message-action", () => retryRun(run.userMessageId)) : null)));
   card._eventIds = new Set((run.events || []).map((event) => event.id));
   card._run = run;
   return card;
@@ -631,18 +643,18 @@ async function renderConversationRoute(conversationId, token) {
     if (token !== state.viewToken) return;
     const conversation = result.conversation;
     state.currentConversation = conversation;
-    const header = pageHeader("PERSISTENT THREAD", conversation.title, "消息、上下文、运行、工具与证据均保存在本地 SQLite。",
-      [action("New analysis", "button secondary", () => createConversation())]);
+    const header = pageHeader("持久对话", conversation.title, "消息、上下文、运行、工具与证据均保存在本地 SQLite。",
+      [action("新建分析", "button secondary", () => createConversation())]);
     const messages = el("div", { class: "message-list", id: "message-list" });
     const runs = new Map(conversation.runs.map((run) => [run.id, run]));
     if (!conversation.messages.length) {
       messages.append(el("div", { class: "empty-conversation" }, el("span", { class: "signal-glyph" }, "⌁"),
-        el("h2", {}, "What should we investigate?"),
-        el("p", {}, "可以查询指标数值、继续追问维度拆分，也可以检查口径、血缘和 Wiki 证据。")));
+        el("h2", {}, "想探究什么？"),
+        el("p", {}, "可以查询指标数值、继续追问维度拆分，也可以检查口径、血缘和知识库证据。")));
     } else {
       for (const message of conversation.messages) {
         if (message.role === "user") {
-          messages.append(el("article", { class: "message user" }, el("div", { class: "message-content" }, message.content), el("div", { class: "message-avatar" }, "YOU")));
+          messages.append(el("article", { class: "message user" }, el("div", { class: "message-content" }, message.content), el("div", { class: "message-avatar" }, "你")));
         } else if (message.role === "assistant" && runs.has(message.runId)) {
           messages.append(assistantMessage(message, runs.get(message.runId)));
         }
@@ -650,18 +662,18 @@ async function renderConversationRoute(conversationId, token) {
     }
     const form = el("form", { class: "composer", id: "ask-form" },
       el("textarea", { id: "ask-input", maxlength: "4000", placeholder: "追问数据、口径或分析，例如：那按地区拆一下…" }),
-      el("button", { id: "ask-submit", class: "button primary", type: "submit" }, "Run  ↗"));
+      el("button", { id: "ask-submit", class: "button primary", type: "submit" }, "运行 ↗"));
     form.addEventListener("submit", (event) => { event.preventDefault(); submitQuestion(conversation.id, $("#ask-input").value); });
     const input = $("#ask-input", form);
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); }
     });
     shell.replaceChildren(header, scopeBar(conversation.context), messages,
-      el("div", { class: "composer-wrap" }, form, el("small", { class: "composer-hint" }, "Enter 运行 · Shift + Enter 换行 · 公开 Trace 不包含模型私有思维链")));
+      el("div", { class: "composer-wrap" }, form, el("small", { class: "composer-hint" }, "Enter 运行 · Shift + Enter 换行 · 公开轨迹不包含模型私有思维链")));
     $$(".message.assistant", messages).forEach((card) => attachRunStream(card, conversation.id));
     messages.scrollTop = messages.scrollHeight;
     const latestRun = conversation.runs[0];
-    if (latestRun) showRunContext(latestRun); else defaultContext("Conversation");
+    if (latestRun) showRunContext(latestRun); else defaultContext("会话");
     await loadRecentChats();
     if (state.pendingQuestion) {
       const pending = state.pendingQuestion; state.pendingQuestion = null;
@@ -698,7 +710,7 @@ function selectedFileStack(target) {
 
 async function startIngestion(form, button) {
   if (!state.selectedFiles.length) { toast("请先选择至少一个文件"); return; }
-  button.disabled = true; button.textContent = "Uploading…";
+  button.disabled = true; button.textContent = "上传中…";
   const data = new FormData();
   data.append("name", $("#job-name", form).value.trim() || `Wiki import · ${new Date().toLocaleDateString("zh-CN")}`);
   data.append("extractionMode", $('input[name="extraction-mode"]:checked', form).value);
@@ -711,14 +723,14 @@ async function startIngestion(form, button) {
     toast("导入任务已创建");
     navigate(`/knowledge/jobs/${encodeURIComponent(result.job.id)}`);
   } catch (error) {
-    toast(error.message); button.disabled = false; button.textContent = "Start building  →";
+    toast(error.message); button.disabled = false; button.textContent = "开始构建 →";
   }
 }
 
 function jobTable(jobs) {
-  if (!jobs.length) return emptyState("No imports yet", "添加文档后，任务状态与候选数量会显示在这里。", "⇧");
+  if (!jobs.length) return emptyState("还没有导入记录", "添加文档后，任务状态与候选数量会显示在这里。", "⇧");
   return el("div", { class: "table-panel" }, el("table", { class: "work-table" },
-    el("thead", {}, el("tr", {}, ["Job", "Status", "Files", "Candidates", "Created"].map((item) => el("th", {}, item)))),
+    el("thead", {}, el("tr", {}, ["任务", "状态", "文件", "候选", "创建时间"].map((item) => el("th", {}, item)))),
     el("tbody", {}, jobs.map((job) => el("tr", {},
       el("td", {}, el("button", { class: "row-link", type: "button", onClick: () => navigate(`/knowledge/jobs/${encodeURIComponent(job.id)}`) },
         el("strong", {}, job.name), el("small", {}, job.id))),
@@ -737,12 +749,12 @@ async function renderBuilder(token) {
   const folderPicker = el("input", { class: "hidden-input", type: "file", multiple: true, webkitdirectory: true });
   const stack = el("div", { class: "file-stack" });
   const zone = el("div", { class: "upload-zone", tabindex: "0" },
-    el("span", { class: "upload-glyph" }, "⇧"), el("h2", {}, "Drop your knowledge here"),
+    el("span", { class: "upload-glyph" }, "⇧"), el("h2", {}, "拖入你的知识文档"),
     el("p", {}, "Markdown · TXT · CSV · SQL · HTML · PDF · DOCX · XLSX · ZIP"),
     el("p", {}, "最多 50 个文件，单文件 25 MB，单任务 100 MB"),
     el("div", { class: "upload-actions" },
-      action("Choose files", "button primary", () => filePicker.click()),
-      action("Choose folder", "button secondary", () => folderPicker.click())),
+      action("选择文件", "button primary", () => filePicker.click()),
+      action("选择文件夹", "button secondary", () => folderPicker.click())),
     filePicker, folderPicker);
   const handleFiles = (files) => { addSelectedFiles(files); selectedFileStack(stack); };
   filePicker.addEventListener("change", () => handleFiles(filePicker.files));
@@ -753,18 +765,18 @@ async function renderBuilder(token) {
   zone.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") filePicker.click(); });
 
   const settings = el("div", { class: "panel panel-pad" },
-    el("div", { class: "field" }, el("label", { for: "job-name" }, "Import name"),
+    el("div", { class: "field" }, el("label", { for: "job-name" }, "导入名称"),
       el("input", { id: "job-name", placeholder: "例如：电商指标词典 2026Q3" })),
-    el("div", { class: "section-heading" }, el("h2", {}, "Extraction mode")),
+    el("div", { class: "section-heading" }, el("h2", {}, "抽取模式")),
     el("div", { class: "mode-grid" },
       el("label", { class: "mode-option" }, el("input", { type: "radio", name: "extraction-mode", value: "rules", checked: true }),
-        el("strong", {}, "Local rules"), el("p", {}, "完全本地解析，适合结构化词典、Markdown frontmatter 与 SQL DDL。")),
+        el("strong", {}, "本地规则"), el("p", {}, "完全本地解析，适合结构化词典、Markdown frontmatter 与 SQL DDL。")),
       el("label", { class: "mode-option" }, el("input", { type: "radio", name: "extraction-mode", value: "llm_assisted" }),
-        el("strong", {}, "LLM assisted"), el("p", {}, "先按本地规则处理，再调用已配置的兼容模型补充候选。"))),
-    el("div", { id: "privacy-note", class: "privacy-note", hidden: true }, "LLM assisted 会把已解析的文本片段发送到 Settings 中配置的模型地址。请确认文档允许发送到该服务。"),
-    el("div", { class: "section-heading" }, el("h2", {}, "Selected files"), el("small", { id: "selected-total" }, "")),
+        el("strong", {}, "LLM 辅助"), el("p", {}, "先按本地规则处理，再调用已配置的兼容模型补充候选。"))),
+    el("div", { id: "privacy-note", class: "privacy-note", hidden: true }, "LLM 辅助会把已解析的文本片段发送到设置页配置的模型地址。请确认文档允许发送到该服务。"),
+    el("div", { class: "section-heading" }, el("h2", {}, "已选文件"), el("small", { id: "selected-total" }, "")),
     stack,
-    action("Start building  →", "button primary", null, { id: "start-ingestion", style: "margin-top:14px;width:100%" }));
+    action("开始构建 →", "button primary", null, { id: "start-ingestion", style: "margin-top:14px;width:100%" }));
   form.append(el("div", {}, zone), settings);
   form.addEventListener("submit", (event) => event.preventDefault());
   $$('input[name="extraction-mode"]', settings).forEach((input) => input.addEventListener("change", () => {
@@ -773,15 +785,15 @@ async function renderBuilder(token) {
   $("#start-ingestion", settings).addEventListener("click", () => startIngestion(form, $("#start-ingestion", settings)));
   selectedFileStack(stack);
 
-  shell.replaceChildren(pageHeader("KNOWLEDGE INGESTION", "Wiki Builder", "把一批文档转成可审核、可发布、可追溯的 LLM Wiki。"),
+  shell.replaceChildren(pageHeader("知识摄入", "知识构建", "把一批文档转成可审核、可发布、可追溯的 LLM 知识库。"),
     form,
-    el("div", { class: "section-heading" }, el("h2", {}, "Recent imports"), el("small", {}, `${jobs.length} jobs`)),
+    el("div", { class: "section-heading" }, el("h2", {}, "最近导入"), el("small", {}, `${jobs.length} 个任务`)),
     jobTable(jobs));
-  defaultContext("Wiki Builder", "上传后会依次完成解析、切分、实体抽取、本体校验和人工审核准备。");
+  defaultContext("知识构建", "上传后会依次完成解析、切分、实体抽取、本体校验和人工审核准备。");
 }
 
 const JOB_STAGES = [
-  ["uploading", "Upload"], ["parsing", "Parse"], ["extracting", "Extract"], ["validating", "Validate"], ["awaiting_review", "Review"],
+  ["uploading", "上传"], ["parsing", "解析"], ["extracting", "抽取"], ["validating", "校验"], ["awaiting_review", "审核"],
 ];
 
 function jobPipeline(job) {
@@ -789,12 +801,12 @@ function jobPipeline(job) {
   const terminal = ["completed", "publishing"].includes(job.status) ? JOB_STAGES.length : statusIndex;
   return el("div", { class: "job-pipeline" }, JOB_STAGES.map(([status, label], index) =>
     el("div", { class: `job-stage ${index < terminal ? "done" : ""} ${index === statusIndex && !["completed", "cancelled", "failed"].includes(job.status) ? "active" : ""}` },
-      el("strong", {}, label), el("small", {}, status === "awaiting_review" ? "human gate" : status))));
+      el("strong", {}, label), el("small", {}, status === "awaiting_review" ? "人工关口" : status))));
 }
 
 function jobFileTable(files = []) {
   return el("div", { class: "table-panel" }, el("table", { class: "work-table" },
-    el("thead", {}, el("tr", {}, ["File", "Type", "Size", "Status", "Diagnostic"].map((item) => el("th", {}, item)))),
+    el("thead", {}, el("tr", {}, ["文件", "类型", "大小", "状态", "诊断"].map((item) => el("th", {}, item)))),
     el("tbody", {}, files.map((file) => el("tr", {},
       el("td", {}, el("strong", {}, file.relative_path), el("small", {}, file.id)),
       el("td", {}, file.extension || file.media_type), el("td", {}, fmtBytes(file.size_bytes)),
@@ -825,30 +837,30 @@ async function renderJob(jobId, token) {
     const job = jobResult.job; const candidates = candidateResult.candidates || [];
     const approved = candidates.filter((item) => item.status === "approved").length;
     const actions = [];
-    if (job.candidateCount) actions.push(action("Review candidates", "button amber", () => navigate(`/knowledge/review?job=${encodeURIComponent(job.id)}`)));
-    if (approved) actions.push(action(`Publish approved (${approved})`, "button primary", () => jobAction(`/api/knowledge/jobs/${job.id}/publish`, { method: "POST" })));
+    if (job.candidateCount) actions.push(action("审核候选", "button amber", () => navigate(`/knowledge/review?job=${encodeURIComponent(job.id)}`)));
+    if (approved) actions.push(action(`发布已批准 (${approved})`, "button primary", () => jobAction(`/api/knowledge/jobs/${job.id}/publish`, { method: "POST" })));
     if (["queued", "uploading", "parsing", "extracting", "validating"].includes(job.status)) {
-      actions.push(action("Cancel", "button secondary", () => jobAction(`/api/knowledge/jobs/${job.id}/cancel`, { method: "POST" })));
+      actions.push(action("取消", "button secondary", () => jobAction(`/api/knowledge/jobs/${job.id}/cancel`, { method: "POST" })));
     }
-    if (job.status === "failed") actions.push(action("Retry failed", "button secondary", () => jobAction(`/api/knowledge/jobs/${job.id}/retry`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })));
-    if (job.status === "completed") actions.push(action("Ask this Wiki  →", "button primary", () => createConversation()));
+    if (job.status === "failed") actions.push(action("重试失败文件", "button secondary", () => jobAction(`/api/knowledge/jobs/${job.id}/retry`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })));
+    if (job.status === "completed") actions.push(action("提问此知识库 →", "button primary", () => createConversation()));
 
     const log = el("div", { class: "event-log", id: "job-event-log" });
     appendJobEvent(log, "job.status", { status: job.status });
-    shell.replaceChildren(pageHeader("INGESTION JOB", job.name, `${job.id} · created ${fmtDate(job.createdAt, true)}`, actions),
+    shell.replaceChildren(pageHeader("摄入任务", job.name, `${job.id} · 创建于 ${fmtDate(job.createdAt, true)}`, actions),
       jobPipeline(job),
       el("section", { class: "stat-grid" },
-        stat("STATUS", job.status), stat("FILES", job.fileCount || job.files.length, `${job.progress?.filesDone || 0} done`),
-        stat("CANDIDATES", job.candidateCount || 0, `${approved} approved`), stat("TOTAL SIZE", fmtBytes(job.totalBytes))),
+        stat("状态", statusText(job.status)), stat("文件", job.fileCount || job.files.length, `${job.progress?.filesDone || 0} 已完成`),
+        stat("候选", job.candidateCount || 0, `${approved} 已批准`), stat("总大小", fmtBytes(job.totalBytes))),
       el("div", { class: "split-grid" },
-        el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "Files")), jobFileTable(job.files)),
-        el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "Public event log")), log)));
+        el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "文件")), jobFileTable(job.files)),
+        el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "公开事件日志")), log)));
     openContext({
-      eyebrow: "INGESTION JOB", title: job.status,
-      content: [section("Progress", el("p", {}, `${job.progress?.filesDone || 0} / ${job.progress?.filesTotal || job.fileCount || 0} files`),
+      eyebrow: "摄入任务", title: statusText(job.status),
+      content: [section("进度", el("p", {}, `${job.progress?.filesDone || 0} / ${job.progress?.filesTotal || job.fileCount || 0} 个文件`),
         el("div", { class: "progress-track" }, el("i", { style: `width:${Math.min(100, ((job.progress?.filesDone || 0) / Math.max(job.progress?.filesTotal || job.fileCount || 1, 1)) * 100)}%` }))),
-        section("Extraction", contextList([`Mode: ${job.extractionMode}`, `Candidates: ${job.candidateCount}`, `Failed files: ${job.progress?.filesFailed || 0}`])),
-        job.error ? section("Diagnostic", el("pre", { class: "context-code" }, JSON.stringify(job.error, null, 2))) : null],
+        section("抽取", contextList([`模式：${job.extractionMode}`, `候选：${job.candidateCount}`, `失败文件：${job.progress?.filesFailed || 0}`])),
+        job.error ? section("诊断", el("pre", { class: "context-code" }, JSON.stringify(job.error, null, 2))) : null],
     });
     if (!["awaiting_review", "completed", "failed", "cancelled"].includes(job.status)) {
       const source = new EventSource(`/api/knowledge/jobs/${encodeURIComponent(job.id)}/events`);
@@ -892,20 +904,20 @@ async function renderReviewQueue(query, token) {
     const jobs = jobsResult.jobs || []; let candidates = candidatesResult.candidates || [];
     state.selectedCandidates.clear();
     const toolbar = el("div", { class: "toolbar" },
-      el("div", { class: "field" }, el("span", {}, "Search"), el("input", { id: "candidate-search", placeholder: "标题、key 或来源文件" })),
-      el("div", { class: "field" }, el("span", {}, "Job"), el("select", { id: "candidate-job" },
-        el("option", { value: "" }, "All jobs"), jobs.map((job) => el("option", { value: job.id, selected: job.id === jobId }, job.name)))),
-      el("div", { class: "field" }, el("span", {}, "Type"), el("select", { id: "candidate-type" },
-        el("option", { value: "" }, "All types"), Object.keys(state.ontology?.schema?.entityTypes || {}).map((type) => el("option", { value: type }, type)))),
-      el("div", { class: "field" }, el("span", {}, "Status"), el("select", { id: "candidate-status" },
-        el("option", { value: "" }, "All statuses"), ["extracted", "needs_review", "approved", "rejected", "merged", "published"].map((status) => el("option", { value: status }, status)))),
-      el("label", { class: "field" }, el("span", {}, "Conflict"), el("select", { id: "candidate-conflict" }, el("option", { value: "" }, "Any"), el("option", { value: "yes" }, "Conflicts only"))));
+      el("div", { class: "field" }, el("span", {}, "搜索"), el("input", { id: "candidate-search", placeholder: "标题、key 或来源文件" })),
+      el("div", { class: "field" }, el("span", {}, "任务"), el("select", { id: "candidate-job" },
+        el("option", { value: "" }, "全部任务"), jobs.map((job) => el("option", { value: job.id, selected: job.id === jobId }, job.name)))),
+      el("div", { class: "field" }, el("span", {}, "类型"), el("select", { id: "candidate-type" },
+        el("option", { value: "" }, "全部类型"), Object.keys(state.ontology?.schema?.entityTypes || {}).map((type) => el("option", { value: type }, type)))),
+      el("div", { class: "field" }, el("span", {}, "状态"), el("select", { id: "candidate-status" },
+        el("option", { value: "" }, "全部状态"), ["extracted", "needs_review", "approved", "rejected", "merged", "published"].map((status) => el("option", { value: status }, statusText(status))))),
+      el("label", { class: "field" }, el("span", {}, "冲突"), el("select", { id: "candidate-conflict" }, el("option", { value: "" }, "不限"), el("option", { value: "yes" }, "仅冲突"))));
     const tableHost = el("div");
-    const batch = el("div", { class: "batch-bar" }, el("span", { id: "selection-label" }, "0 selected"),
+    const batch = el("div", { class: "batch-bar" }, el("span", { id: "selection-label" }, "已选 0 条"),
       el("div", { class: "batch-actions" },
-        action("Approve", "button primary", () => batchReviewCandidates(candidates, "approve")),
-        action("Reject", "button danger", () => batchReviewCandidates(candidates, "reject")),
-        action("Publish approved", "button amber", async () => {
+        action("批准", "button primary", () => batchReviewCandidates(candidates, "approve")),
+        action("驳回", "button danger", () => batchReviewCandidates(candidates, "reject")),
+        action("发布已批准", "button amber", async () => {
           const currentJob = $("#candidate-job").value;
           if (!currentJob) { toast("发布前请先选择一个任务"); return; }
           await jobAction(`/api/knowledge/jobs/${encodeURIComponent(currentJob)}/publish`, { method: "POST" });
@@ -918,35 +930,35 @@ async function renderReviewQueue(query, token) {
       const visible = candidates.filter((candidate) => (!search || `${candidate.title} ${candidate.entityKey} ${candidate.sourcePath}`.toLowerCase().includes(search))
         && (!type || candidate.entityType === type) && (!status || candidate.status === status) && (!conflictOnly || candidate.conflict));
       const table = el("div", { class: "table-panel" }, el("table", { class: "work-table" },
-        el("thead", {}, el("tr", {}, ["", "Candidate", "Type", "Source", "Status", "Validation"].map((item) => el("th", {}, item)))),
+        el("thead", {}, el("tr", {}, ["", "候选", "类型", "来源", "状态", "校验"].map((item) => el("th", {}, item)))),
         el("tbody", {}, visible.map((candidate) => {
           const checkbox = el("input", { type: "checkbox", checked: state.selectedCandidates.has(candidate.id), "aria-label": `选择 ${candidate.title}` });
           checkbox.addEventListener("change", () => {
             if (checkbox.checked) state.selectedCandidates.add(candidate.id); else state.selectedCandidates.delete(candidate.id);
-            $("#selection-label").textContent = `${state.selectedCandidates.size} selected`;
+            $("#selection-label").textContent = `已选 ${state.selectedCandidates.size} 条`;
           });
           return el("tr", {}, el("td", {}, checkbox),
             el("td", {}, el("button", { class: "row-link", type: "button", onClick: () => navigate(`/knowledge/review/${encodeURIComponent(candidate.id)}`) },
-              el("strong", {}, candidate.title || "Untitled"), el("small", {}, candidate.entityKey || "key pending")),
+              el("strong", {}, candidate.title || "未命名"), el("small", {}, candidate.entityKey || "key 待补充")),
               candidate.conflict ? el("span", { class: "conflict-tag" }, candidate.conflict.type) : null),
             el("td", {}, candidate.entityType), el("td", {}, candidate.sourcePath || "—"),
             el("td", {}, statusPill(candidate.status)),
-            el("td", {}, candidate.validation?.valid && !candidate.relationErrors?.length ? "Pass" :
+            el("td", {}, candidate.validation?.valid && !candidate.relationErrors?.length ? "通过" :
               el("ul", { class: "issue-list" }, [...(candidate.validation?.errors || []), ...(candidate.relationErrors || [])].slice(0, 3).map((issue) => el("li", {}, typeof issue === "string" ? issue : issue.message || JSON.stringify(issue))))));
         }))));
-      tableHost.replaceChildren(visible.length ? table : emptyState("No candidates match", "调整筛选条件，或先在 Wiki Builder 创建一个导入任务。", "✓"));
+      tableHost.replaceChildren(visible.length ? table : emptyState("没有匹配的候选", "调整筛选条件，或先在知识构建创建一个导入任务。", "✓"));
     };
     toolbar.addEventListener("input", draw);
     $("#candidate-job", toolbar).addEventListener("change", (event) => {
       navigate(`/knowledge/review${event.target.value ? `?job=${encodeURIComponent(event.target.value)}` : ""}`);
     });
-    shell.replaceChildren(pageHeader("HUMAN-IN-THE-LOOP", "Review Queue", "每个候选都保留来源、抽取方式、校验问题与冲突信息。"),
+    shell.replaceChildren(pageHeader("人工审核", "审核队列", "每个候选都保留来源、抽取方式、校验问题与冲突信息。"),
       toolbar, batch, tableHost);
     draw();
     openContext({
-      eyebrow: "REVIEW GATE", title: "Why review?",
-      content: [section("Publish policy", el("p", {}, "只有 approved 候选可以进入发布流程。发布后会写入 Wiki 文件、版本记录并热更新 FTS 与图谱索引。")),
-        section("Current queue", contextList([`${candidates.length} candidates`, `${candidates.filter((item) => item.conflict).length} conflicts`, `${candidates.filter((item) => item.status === "approved").length} approved`]))],
+      eyebrow: "审核关卡", title: "为什么要审核？",
+      content: [section("发布策略", el("p", {}, "只有已批准候选可以进入发布流程。发布后会写入知识库文件、版本记录并热更新 FTS 与图谱索引。")),
+        section("当前队列", contextList([`${candidates.length} 条候选`, `${candidates.filter((item) => item.conflict).length} 条冲突`, `${candidates.filter((item) => item.status === "approved").length} 条已批准`]))],
     });
   } catch (error) {
     if (token === state.viewToken) shell.replaceChildren(errorState(error));
@@ -962,16 +974,16 @@ async function renderCandidate(candidateId, token) {
     let candidate = result.candidate;
     const source = el("pre", { class: "source-preview" }, candidate.sourcePreview || "没有可显示的文本预览。");
     const editor = el("form", { class: "editor-panel form-grid" },
-      el("div", { class: "field" }, el("label", { for: "edit-type" }, "Entity type"), el("select", { id: "edit-type" },
+      el("div", { class: "field" }, el("label", { for: "edit-type" }, "实体类型"), el("select", { id: "edit-type" },
         Object.keys(state.ontology?.schema?.entityTypes || {}).map((type) => el("option", { value: type, selected: type === candidate.entityType }, type)))),
-      el("div", { class: "field" }, el("label", { for: "edit-key" }, "Entity key"), el("input", { id: "edit-key", value: candidate.entityKey || "" })),
-      el("div", { class: "field full" }, el("label", { for: "edit-title" }, "Title"), el("input", { id: "edit-title", value: candidate.title || "" })),
-      el("div", { class: "field full" }, el("label", { for: "edit-definition" }, "Definition"), el("textarea", { id: "edit-definition" }, candidate.definition || "")),
-      el("div", { class: "field full" }, el("label", { for: "edit-aliases" }, "Aliases"), el("input", { id: "edit-aliases", value: (candidate.aliases || []).join(", "), placeholder: "用逗号分隔" })),
-      el("div", { class: "field full" }, el("label", { for: "edit-relations" }, "Relations (JSON)"), el("textarea", { id: "edit-relations" }, JSON.stringify(candidate.relations || {}, null, 2))),
-      candidate.conflict ? el("div", { class: "field full" }, el("span", {}, "Merge target"), el("input", { id: "merge-target", value: candidate.conflict.existing?.key || "", placeholder: "existing entity key" })) : null,
+      el("div", { class: "field" }, el("label", { for: "edit-key" }, "实体键"), el("input", { id: "edit-key", value: candidate.entityKey || "" })),
+      el("div", { class: "field full" }, el("label", { for: "edit-title" }, "标题"), el("input", { id: "edit-title", value: candidate.title || "" })),
+      el("div", { class: "field full" }, el("label", { for: "edit-definition" }, "定义"), el("textarea", { id: "edit-definition" }, candidate.definition || "")),
+      el("div", { class: "field full" }, el("label", { for: "edit-aliases" }, "别名"), el("input", { id: "edit-aliases", value: (candidate.aliases || []).join(", "), placeholder: "用逗号分隔" })),
+      el("div", { class: "field full" }, el("label", { for: "edit-relations" }, "关系 (JSON)"), el("textarea", { id: "edit-relations" }, JSON.stringify(candidate.relations || {}, null, 2))),
+      candidate.conflict ? el("div", { class: "field full" }, el("span", {}, "合并目标"), el("input", { id: "merge-target", value: candidate.conflict.existing?.key || "", placeholder: "现有实体 key" })) : null,
       el("div", { class: "editor-actions field full" },
-        action("Save draft", "button secondary", async () => {
+        action("保存草稿", "button secondary", async () => {
           try {
             const relations = JSON.parse($("#edit-relations", editor).value || "{}");
             const updated = await api(`/api/knowledge/candidates/${candidate.id}`, {
@@ -985,23 +997,23 @@ async function renderCandidate(candidateId, token) {
             candidate = updated.candidate; toast("草稿已保存"); renderRoute();
           } catch (error) { toast(error.message); }
         }),
-        action("Approve", "button primary", () => reviewOne(candidate, "approve")),
-        candidate.conflict ? action("Merge", "button amber", () => reviewOne(candidate, "merge", $("#merge-target", editor).value.trim())) : null,
-        action("Reject", "button danger", () => reviewOne(candidate, "reject"))));
+        action("批准", "button primary", () => reviewOne(candidate, "approve")),
+        candidate.conflict ? action("合并", "button amber", () => reviewOne(candidate, "merge", $("#merge-target", editor).value.trim())) : null,
+        action("驳回", "button danger", () => reviewOne(candidate, "reject"))));
     editor.addEventListener("submit", (event) => event.preventDefault());
-    shell.replaceChildren(pageHeader("CANDIDATE REVIEW", candidate.title || "Untitled candidate", `${candidate.sourcePath || "Unknown source"} · revision ${candidate.revision}`,
-      [action("Back to queue", "button secondary", () => navigate(`/knowledge/review?job=${encodeURIComponent(candidate.jobId)}`))]),
+    shell.replaceChildren(pageHeader("候选审核", candidate.title || "未命名候选", `${candidate.sourcePath || "未知来源"} · revision ${candidate.revision}`,
+      [action("返回队列", "button secondary", () => navigate(`/knowledge/review?job=${encodeURIComponent(candidate.jobId)}`))]),
       el("div", { class: "split-grid" },
-        el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "Source preview"), el("small", {}, candidate.sourcePath || "")), source),
-        el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "Candidate editor"), statusPill(candidate.status)), editor)));
+        el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "来源预览"), el("small", {}, candidate.sourcePath || "")), source),
+        el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "候选编辑器"), statusPill(candidate.status)), editor)));
     openContext({
-      eyebrow: "VALIDATION", title: candidate.validation?.valid ? "Schema passed" : "Needs attention",
+      eyebrow: "校验", title: candidate.validation?.valid ? "通过" : "需要关注",
       content: [
-        section("Extraction", contextList([`Method: ${candidate.extraction?.method || "rules"}`, `Revision: ${candidate.revision}`, `Source: ${candidate.sourcePath || "—"}`])),
-        candidate.conflict ? section("Conflict", el("p", {}, `${candidate.conflict.type} · ${candidate.conflict.existing?.title || candidate.conflict.existing?.key}`)) : section("Conflict", el("p", {}, "No duplicate or protected-page conflict detected.")),
-        section("Validation messages", contextList([...(candidate.validation?.errors || []), ...(candidate.relationErrors || [])].map((item) => typeof item === "string" ? item : item.message || JSON.stringify(item)).length
+        section("抽取", contextList([`方法：${candidate.extraction?.method || "rules"}`, `版本：${candidate.revision}`, `来源：${candidate.sourcePath || "—"}`])),
+        candidate.conflict ? section("冲突", el("p", {}, `${candidate.conflict.type} · ${candidate.conflict.existing?.title || candidate.conflict.existing?.key}`)) : section("冲突", el("p", {}, "未检测到重复或受保护页面冲突。")),
+        section("校验信息", contextList([...(candidate.validation?.errors || []), ...(candidate.relationErrors || [])].map((item) => typeof item === "string" ? item : item.message || JSON.stringify(item)).length
           ? [...(candidate.validation?.errors || []), ...(candidate.relationErrors || [])].map((item) => typeof item === "string" ? item : item.message || JSON.stringify(item))
-          : ["All current checks passed"])),
+          : ["当前所有检查均已通过"])),
       ],
     });
   } catch (error) {
@@ -1021,9 +1033,9 @@ async function reviewOne(candidate, decision, mergeTargetKey) {
 }
 
 function wikiDirectory(pages, activeKey = null) {
-  const search = el("input", { placeholder: "Search Wiki…", "aria-label": "搜索 Wiki" });
+  const search = el("input", { placeholder: "搜索知识库…", "aria-label": "搜索知识库" });
   const type = el("select", { "aria-label": "按类型筛选" },
-    el("option", { value: "" }, "All entity types"),
+    el("option", { value: "" }, "全部实体类型"),
     [...new Set(pages.map((page) => page.type))].sort().map((item) => el("option", { value: item }, item)));
   const list = el("div", { class: "wiki-page-list" });
   const draw = () => {
@@ -1039,28 +1051,28 @@ function wikiDirectory(pages, activeKey = null) {
 }
 
 async function openPageSource(page, index = 0) {
-  openContext({ eyebrow: "SOURCE", title: "Loading source…", content: loading() });
+  openContext({ eyebrow: "来源", title: "正在加载来源…", content: loading() });
   try {
     const result = await api(`/api/wiki/pages/${encodeURIComponent(page.key)}/source?index=${index}`);
     const source = result.source;
     openContext({
-      eyebrow: "SOURCE LOCATOR", title: page.title,
-      content: [section("Path", el("p", {}, source.path), statusPill(source.available ? "verified" : "needs_review")),
-        section("Content", el("pre", { class: "context-code" }, source.content || "路径已保留；当前来源文件不可读取。"))],
+      eyebrow: "来源定位", title: page.title,
+      content: [section("路径", el("p", {}, source.path), statusPill(source.available ? "verified" : "needs_review")),
+        section("内容", el("pre", { class: "context-code" }, source.content || "路径已保留；当前来源文件不可读取。"))],
     });
-  } catch (error) { openContext({ eyebrow: "SOURCE", title: "Failed", content: errorState(error) }); }
+  } catch (error) { openContext({ eyebrow: "来源", title: "失败", content: errorState(error) }); }
 }
 
 function showPageContext(page) {
   const outgoing = (page.outgoing || []).map((item) => `${item.relation} → ${item.entity.title}`);
   const incoming = (page.incoming || []).map((item) => `${item.entity.title} → ${item.relation}`);
   openContext({
-    eyebrow: "WIKI PAGE", title: page.type,
+    eyebrow: "知识页面", title: page.type,
     content: [
-      section("Status & version", statusPill(page.status), el("p", {}, page.versions?.length ? `Latest v${page.versions[0].version} · ${fmtDate(page.versions[0].publishedAt)}` : "Repository page · no publication record")),
-      section("Sources", contextList((page.sources || []).length ? page.sources : [page.path])),
-      section("Outgoing", contextList(outgoing.length ? outgoing : ["No outgoing relations"])),
-      section("Incoming", contextList(incoming.length ? incoming : ["No incoming references"])),
+      section("状态与版本", statusPill(page.status), el("p", {}, page.versions?.length ? `最近 v${page.versions[0].version} · ${fmtDate(page.versions[0].publishedAt)}` : "仓库页面 · 无发布记录")),
+      section("来源", contextList((page.sources || []).length ? page.sources : [page.path])),
+      section("出边", contextList(outgoing.length ? outgoing : ["暂无出边关系"])),
+      section("入边", contextList(incoming.length ? incoming : ["暂无入边引用"])),
     ],
   });
 }
@@ -1083,12 +1095,12 @@ async function renderWikiExplorer(activeKey, token) {
       el("div", { class: "relation-row" }, [
         ...(page.outgoing || []).map((item) => action(`${item.relation} → ${item.entity.title}`, "relation-chip", () => navigate(`/knowledge/wiki/${encodeURIComponent(item.entity.key)}`))),
         ...(page.incoming || []).map((item) => action(`${item.entity.title} → ${item.relation}`, "relation-chip", () => navigate(`/knowledge/wiki/${encodeURIComponent(item.entity.key)}`))),
-      ])) : emptyState("Explore published knowledge", "选择左侧页面，查看正文、来源、版本和双向本体关系。", "▤");
-    shell.replaceChildren(pageHeader("PUBLISHED KNOWLEDGE", "Wiki Explorer", `${pagesResult.total} pages indexed locally`,
-      [action("Build Wiki", "button secondary", () => navigate("/knowledge/builder")),
-        action("Open graph", "button primary", () => navigate(`/knowledge/ontology${page?.entityKey ? `?focus=${encodeURIComponent(page.entityKey)}` : ""}`))]),
+      ])) : emptyState("浏览已发布知识", "选择左侧页面，查看正文、来源、版本和双向本体关系。", "▤");
+    shell.replaceChildren(pageHeader("已发布知识", "知识库", `${pagesResult.total} 页本地索引`,
+      [action("构建知识库", "button secondary", () => navigate("/knowledge/builder")),
+        action("打开图谱", "button primary", () => navigate(`/knowledge/ontology${page?.entityKey ? `?focus=${encodeURIComponent(page.entityKey)}` : ""}`))]),
       el("div", { class: "wiki-layout" }, wikiDirectory(pages, page?.key), documentView));
-    if (page) showPageContext(page); else defaultContext("Wiki Explorer");
+    if (page) showPageContext(page); else defaultContext("知识库");
   } catch (error) {
     if (token === state.viewToken) shell.replaceChildren(errorState(error));
   }
@@ -1185,13 +1197,13 @@ async function showGraphNode(node) {
       ...(page.incoming || []).map((item) => `${item.entity.title} → ${item.relation}`),
     ];
     openContext({
-      eyebrow: "ONTOLOGY NODE", title: page.title,
-      content: [section("Type", statusPill(page.status), el("p", {}, page.type)),
-        section("Definition", el("p", {}, page.content.slice(0, 500))),
-        section("Relations", contextList(relations.length ? relations : ["No connected nodes"])),
-        section("Actions", action("Open Wiki page", "button primary", () => navigate(`/knowledge/wiki/${encodeURIComponent(page.key)}`)))],
+      eyebrow: "本体节点", title: page.title,
+      content: [section("类型", statusPill(page.status), el("p", {}, page.type)),
+        section("定义", el("p", {}, page.content.slice(0, 500))),
+        section("关系", contextList(relations.length ? relations : ["无连接节点"])),
+        section("操作", action("打开知识库页面", "button primary", () => navigate(`/knowledge/wiki/${encodeURIComponent(page.key)}`)))],
     });
-  } catch (error) { openContext({ eyebrow: "ONTOLOGY NODE", title: "Failed", content: errorState(error) }); }
+  } catch (error) { openContext({ eyebrow: "本体节点", title: "失败", content: errorState(error) }); }
 }
 
 async function renderOntologyGraph(query, token) {
@@ -1207,46 +1219,46 @@ async function renderOntologyGraph(query, token) {
     const full = fullResult.graph; const graph = graphResult.graph;
     const svg = svgEl("svg", { role: "img", "aria-label": "MetricLore ontology graph" });
     const resetView = enableGraphPanZoom(svg);
-    const typeSelect = el("select", { "aria-label": "实体类型" }, el("option", { value: "" }, "All entity types"),
+    const typeSelect = el("select", { "aria-label": "实体类型" }, el("option", { value: "" }, "全部实体类型"),
       [...new Set(graph.nodes.map((node) => node.type))].sort().map((type) => el("option", { value: type }, type)));
-    const search = el("select", { "aria-label": "聚焦实体" }, el("option", { value: "" }, "Focus a node…"),
+    const search = el("select", { "aria-label": "聚焦实体" }, el("option", { value: "" }, "聚焦节点…"),
       full.nodes.slice().sort((a, b) => a.title.localeCompare(b.title)).map((node) => el("option", { value: node.key, selected: node.key === focus }, `${node.title} · ${node.type}`)));
-    const depthSelect = el("select", { "aria-label": "关系深度" }, [1, 2, 3].map((item) => el("option", { value: item, selected: String(item) === String(depth) }, `Depth ${item}`)));
+    const depthSelect = el("select", { "aria-label": "关系深度" }, [1, 2, 3].map((item) => el("option", { value: item, selected: String(item) === String(depth) }, `深度 ${item}`)));
     const count = el("span");
     const draw = () => {
       const summary = drawOntologySvg(svg, graph, typeSelect.value, focus);
-      count.textContent = `${summary.nodeCount} nodes · ${summary.edgeCount} edges`;
+      count.textContent = `${summary.nodeCount} 节点 · ${summary.edgeCount} 边`;
     };
     typeSelect.addEventListener("change", draw);
     search.addEventListener("change", () => navigate(`/knowledge/ontology${search.value ? `?focus=${encodeURIComponent(search.value)}&depth=${depthSelect.value}` : ""}`));
     depthSelect.addEventListener("change", () => navigate(`/knowledge/ontology${focus ? `?focus=${encodeURIComponent(focus)}&depth=${depthSelect.value}` : ""}`));
     const graphShell = el("div", { class: "graph-shell" }, el("div", { class: "graph-toolbar" },
-      search, typeSelect, depthSelect, action("Fit", "", resetView),
-      focus ? action("Clear focus", "", () => navigate("/knowledge/ontology")) : null), svg,
+      search, typeSelect, depthSelect, action("适配", "", resetView),
+      focus ? action("清除聚焦", "", () => navigate("/knowledge/ontology")) : null), svg,
       el("div", { class: "graph-legend" }, Object.entries(TYPE_COLORS).map(([type, color]) => el("span", {}, el("i", { style: `background:${color}` }), type))));
     draw();
-    shell.replaceChildren(pageHeader("KNOWLEDGE GRAPH", "Ontology", "筛选实体类型、聚焦一至三跳子图；单击检查节点，双击打开 Wiki 页面。",
-      [count, action("Wiki Explorer", "button secondary", () => navigate("/knowledge/wiki"))]), graphShell);
+    shell.replaceChildren(pageHeader("知识图谱", "本体", "筛选实体类型、聚焦一至三跳子图；单击检查节点，双击打开知识库页面。",
+      [count, action("知识库", "button secondary", () => navigate("/knowledge/wiki"))]), graphShell);
     if (focus) {
       const node = full.nodes.find((item) => item.key === focus);
       if (node) showGraphNode(node);
-    } else defaultContext("Ontology", "选择节点查看定义、来源和双向关系。滚轮缩放，拖拽画布，双击打开 Wiki。");
+    } else defaultContext("本体", "选择节点查看定义、来源和双向关系。滚轮缩放，拖拽画布，双击打开知识库。");
   } catch (error) {
     if (token === state.viewToken) shell.replaceChildren(errorState(error));
   }
 }
 
 async function showMetricContext(key, metric) {
-  openContext({ eyebrow: "METRIC", title: metric.label, content: loading() });
+  openContext({ eyebrow: "指标", title: metric.label, content: loading() });
   let page = null;
   try { page = (await api(`/api/wiki/pages/${encodeURIComponent(`metric-${key.replaceAll("_", "-")}`)}`)).page; } catch { /* 目录信息仍可展示 */ }
   const formula = metric.type === "atomic" ? `${metric.aggregation}(${metric.column})` : `${metric.numerator} / ${metric.denominator}${metric.scale ? ` × ${metric.scale}` : ""}`;
   openContext({
-    eyebrow: "GOVERNED METRIC", title: metric.label,
-    content: [section("Definition", el("p", {}, metric.description)),
-      section("Semantic mapping", contextList([`Key: ${key}`, `Type: ${metric.type}`, `Formula: ${formula}`, `Format: ${metric.format}`])),
-      page ? section("Ontology links", contextList(Object.entries(page.relations || {}).flatMap(([relation, targets]) => targets.map((target) => `${relation} → ${target}`)))) : null,
-      section("Try it", action("Ask about this metric", "button primary", () => createConversation(`近 14 天${metric.label}趋势怎么样？`)))],
+    eyebrow: "受治理指标", title: metric.label,
+    content: [section("定义", el("p", {}, metric.description)),
+      section("语义映射", contextList([`键：${key}`, `类型：${metric.type}`, `公式：${formula}`, `格式：${metric.format}`])),
+      page ? section("本体关联", contextList(Object.entries(page.relations || {}).flatMap(([relation, targets]) => targets.map((target) => `${relation} → ${target}`)))) : null,
+      section("试一试", action("问问这个指标", "button primary", () => createConversation(`近 14 天${metric.label}趋势怎么样？`)))],
   });
 }
 
@@ -1268,12 +1280,12 @@ async function renderMetrics(token) {
     }));
   };
   search.addEventListener("input", draw); draw();
-  shell.append(pageHeader("SEMANTIC CATALOG", "Metrics", "注册指标是 Agent 查询数据的唯一入口；每个指标都有稳定 key、定义、公式和格式。"),
+  shell.append(pageHeader("语义目录", "指标", "注册指标是 Agent 查询数据的唯一入口；每个指标都有稳定 key、定义、公式和格式。"),
     el("div", { class: "toolbar", style: "grid-template-columns:1fr auto" },
-      el("div", { class: "field" }, el("span", {}, "Search"), search),
-      action("Ask data", "button primary", () => createConversation())),
+      el("div", { class: "field" }, el("span", {}, "搜索"), search),
+      action("问数据", "button primary", () => createConversation())),
     list);
-  defaultContext("Metrics", "选择指标查看公式、物理映射、本体关系和示例问题。");
+  defaultContext("指标", "选择指标查看公式、物理映射、本体关系和示例问题。");
 }
 
 function mappingCard(kind, key, item) {
@@ -1289,16 +1301,16 @@ async function renderSemantic(token) {
   $("#workspace").replaceChildren(shell);
   if (token !== state.viewToken) return;
   const model = state.catalog;
-  shell.append(pageHeader("GOVERNED MAPPING", "Semantic Model", "把业务指标和维度映射到受控物理字段；运行时只接受白名单对象与参数化筛选。"),
-    el("section", { class: "stat-grid" }, stat("MODEL", model.model), stat("FACT TABLE", model.table), stat("TIME COLUMN", model.timeColumn), stat("GRAINS", model.timeGrains.join(" · "))),
-    el("div", { class: "section-heading" }, el("h2", {}, "Registered metrics"), el("small", {}, Object.keys(model.metrics).length)),
+  shell.append(pageHeader("受治理映射", "语义模型", "把业务指标和维度映射到受控物理字段；运行时只接受白名单对象与参数化筛选。"),
+    el("section", { class: "stat-grid" }, stat("模型", model.model), stat("事实表", model.table), stat("时间字段", model.timeColumn), stat("粒度", model.timeGrains.join(" · "))),
+    el("div", { class: "section-heading" }, el("h2", {}, "已注册指标"), el("small", {}, Object.keys(model.metrics).length)),
     el("div", { class: "mapping-grid" }, Object.entries(model.metrics).map(([key, item]) => mappingCard("Metric", key, item))),
-    el("div", { class: "section-heading" }, el("h2", {}, "Registered dimensions"), el("small", {}, Object.keys(model.dimensions).length)),
+    el("div", { class: "section-heading" }, el("h2", {}, "已注册维度"), el("small", {}, Object.keys(model.dimensions).length)),
     el("div", { class: "mapping-grid" }, Object.entries(model.dimensions).map(([key, item]) => mappingCard("Dimension", key, item))));
   openContext({
-    eyebrow: "QUERY BOUNDARY", title: "Controlled by code",
-    content: [section("Accepted input", contextList(["Registered metric keys", "Registered dimensions", "Date range and grain", "Bound filter values"])),
-      section("Runtime guarantee", el("p", {}, "语义层负责聚合表达式、标识符白名单、参数绑定、分组和结果上限。Agent 工具接收业务对象，不接收任意 SQL。"))],
+    eyebrow: "查询边界", title: "由代码控制",
+    content: [section("可接受输入", contextList(["已注册指标键", "已注册维度", "日期范围与粒度", "有边界的筛选值"])),
+      section("运行时保证", el("p", {}, "语义层负责聚合表达式、标识符白名单、参数绑定、分组和结果上限。Agent 工具接收业务对象，不接收任意 SQL。"))],
   });
 }
 
@@ -1309,25 +1321,25 @@ async function renderEvaluation(token) {
     const { report, command } = await api("/api/evaluation");
     if (token !== state.viewToken) return;
     if (!report) {
-      shell.replaceChildren(pageHeader("REGRESSION QUALITY", "Evaluate", "评测报告只读取本地最新一次运行结果。"),
-        emptyState("No report yet", `运行 ${command} 生成首份回归报告。`, "◇"));
+      shell.replaceChildren(pageHeader("回归质量", "评测", "评测报告只读取本地最新一次运行结果。"),
+        emptyState("暂无报告", `运行 ${command} 生成首份回归报告。`, "◇"));
       return;
     }
     const groups = Object.entries(report.groups || {});
-    shell.replaceChildren(pageHeader("REGRESSION QUALITY", "Evaluate", `Latest run · ${fmtDate(report.generatedAt, true)}`,
-      [action("Run via CLI: npm run eval", "button secondary", () => toast("请在项目终端运行 npm run eval"))]),
+    shell.replaceChildren(pageHeader("回归质量", "评测", `最近运行 · ${fmtDate(report.generatedAt, true)}`,
+      [action("通过命令行运行：npm run eval", "button secondary", () => toast("请在项目终端运行 npm run eval"))]),
       el("section", { class: "stat-grid" },
-        stat("CASES", report.caseCount, `× ${report.repeatedRuns} runs`),
-        stat("PASSED", report.passed, `${Math.round(report.passRate * 100)}% pass rate`),
-        stat("FAILED", report.failed), stat("CONSISTENCY", `${Math.round(report.consistencyRate * 100)}%`, "public result agreement")),
-      el("div", { class: "section-heading" }, el("h2", {}, "Capability coverage"), el("small", {}, "routing · tools · status · forbidden claims")),
+        stat("用例", report.caseCount, `× ${report.repeatedRuns} 次`),
+        stat("通过", report.passed, `${Math.round(report.passRate * 100)}% 通过率`),
+        stat("失败", report.failed), stat("一致性", `${Math.round(report.consistencyRate * 100)}%`, "公开结果一致性")),
+      el("div", { class: "section-heading" }, el("h2", {}, "能力覆盖"), el("small", {}, "路由 · 工具 · 状态 · 禁用表述")),
       el("div", { class: "mapping-grid" }, groups.map(([group, value]) =>
         el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, group), el("h3", {}, `${value.passed} / ${value.total}`),
           el("div", { class: "progress-track" }, el("i", { style: `width:${value.total ? value.passed / value.total * 100 : 0}%` }))))));
     openContext({
-      eyebrow: "EVALUATION", title: "What is scored?",
-      content: [section("Checks", contextList(["Skill routing", "Required tool coverage", "Run status", "Forbidden wording", "Repeat consistency"])),
-        section("Data boundary", el("p", {}, "公开评测问题与内置数据均为合成内容；数值准确性另由语义层集成测试覆盖。"))],
+      eyebrow: "评测", title: "评测什么？",
+      content: [section("检查项", contextList(["Skill 路由", "必要工具覆盖", "运行状态", "禁用表述", "重复一致性"])),
+        section("数据边界", el("p", {}, "公开评测问题与内置数据均为合成内容；数值准确性另由语义层集成测试覆盖。"))],
     });
   } catch (error) {
     if (token === state.viewToken) shell.replaceChildren(errorState(error));
@@ -1338,25 +1350,25 @@ async function renderSettings(token) {
   const shell = el("div", { class: "page-shell" });
   $("#workspace").replaceChildren(shell);
   if (token !== state.viewToken) return;
-  const mode = state.health?.llmConfigured ? "OpenAI-compatible LLM" : "Deterministic local runtime";
-  shell.append(pageHeader("LOCAL WORKSPACE", "Settings", "查看当前运行模式、数据源、知识索引与本地存储边界。"),
+  const mode = state.health?.llmConfigured ? "OpenAI 兼容模型" : "确定性本地运行";
+  shell.append(pageHeader("本地工作区", "设置", "查看当前运行模式、数据源、知识索引与本地存储边界。"),
     el("div", { class: "mapping-grid" },
-      el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, "AGENT"), el("h3", {}, mode),
-        el("dl", {}, el("dt", {}, "LLM"), el("dd", {}, state.health?.llmConfigured ? "Configured" : "Optional · not configured"),
-          el("dt", {}, "Skills"), el("dd", {}, (state.health?.skills || []).join(", ")), el("dt", {}, "Fallback"), el("dd", {}, "Deterministic governed path"))),
-      el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, "DATA"), el("h3", {}, state.catalog?.label),
-        el("dl", {}, el("dt", {}, "Database"), el("dd", {}, "SQLite"), el("dt", {}, "Model"), el("dd", {}, state.catalog?.model),
-          el("dt", {}, "Fact table"), el("dd", {}, state.catalog?.table), el("dt", {}, "Dataset"), el("dd", {}, "Synthetic sample data"))),
-      el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, "KNOWLEDGE"), el("h3", {}, "Local LLM Wiki"),
-        el("dl", {}, el("dt", {}, "Pages"), el("dd", {}, state.health?.wikiDocuments), el("dt", {}, "Entities"), el("dd", {}, state.health?.wikiEntities),
-          el("dt", {}, "Search"), el("dd", {}, "SQLite FTS5"), el("dt", {}, "Graph"), el("dd", {}, "Ontology relations"))),
-      el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, "UPLOAD LIMITS"), el("h3", {}, "Wiki Builder"),
-        el("dl", {}, el("dt", {}, "Files"), el("dd", {}, "50 per job"), el("dt", {}, "Job size"), el("dd", {}, "100 MB"),
-          el("dt", {}, "File size"), el("dd", {}, "25 MB"), el("dt", {}, "ZIP expanded"), el("dd", {}, "250 MB")))));
+      el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, "智能体"), el("h3", {}, mode),
+        el("dl", {}, el("dt", {}, "LLM"), el("dd", {}, state.health?.llmConfigured ? "已配置" : "可选 · 未配置"),
+          el("dt", {}, "Skills"), el("dd", {}, (state.health?.skills || []).join(", ")), el("dt", {}, "降级路径"), el("dd", {}, "确定性受治理路径"))),
+      el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, "数据"), el("h3", {}, state.catalog?.label),
+        el("dl", {}, el("dt", {}, "数据库"), el("dd", {}, "SQLite"), el("dt", {}, "模型"), el("dd", {}, state.catalog?.model),
+          el("dt", {}, "事实表"), el("dd", {}, state.catalog?.table), el("dt", {}, "数据集"), el("dd", {}, "合成示例数据"))),
+      el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, "知识"), el("h3", {}, "本地知识库"),
+        el("dl", {}, el("dt", {}, "页面"), el("dd", {}, state.health?.wikiDocuments), el("dt", {}, "实体"), el("dd", {}, state.health?.wikiEntities),
+          el("dt", {}, "检索"), el("dd", {}, "SQLite FTS5"), el("dt", {}, "图谱"), el("dd", {}, "本体关系"))),
+      el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, "上传限制"), el("h3", {}, "知识构建"),
+        el("dl", {}, el("dt", {}, "文件数"), el("dd", {}, "每任务 50"), el("dt", {}, "任务体积"), el("dd", {}, "100 MB"),
+          el("dt", {}, "单文件"), el("dd", {}, "25 MB"), el("dt", {}, "ZIP 解压"), el("dd", {}, "250 MB")))));
   openContext({
-    eyebrow: "PRIVACY", title: "Local by default",
-    content: [section("Storage", el("p", {}, "会话、运行、候选、审核记录和版本保存在本地 SQLite；上传文件保存在本地任务目录。")),
-      section("Model traffic", el("p", {}, state.health?.llmConfigured ? "LLM 模式已配置。模型调用使用环境变量中的兼容端点。" : "当前没有配置模型密钥，问答与规则抽取使用本地确定性路径。"))],
+    eyebrow: "隐私", title: "默认本地",
+    content: [section("存储", el("p", {}, "会话、运行、候选、审核记录和版本保存在本地 SQLite；上传文件保存在本地任务目录。")),
+      section("模型流量", el("p", {}, state.health?.llmConfigured ? "LLM 模式已配置。模型调用使用环境变量中的兼容端点。" : "当前没有配置模型密钥，问答与规则抽取使用本地确定性路径。"))],
   });
 }
 
@@ -1366,6 +1378,9 @@ async function renderRoute() {
   closeStreams(); closePanels(); markActive(path);
   $("#workspace").replaceChildren(loading());
   $("#workspace").scrollTop = 0;
+  // 右侧上下文面板只在 Ask（会话）页面出现，按会话独立展示
+  const isAsk = path === "/ask" || path.startsWith("/ask/");
+  $("#stage")?.classList.toggle("has-context", isAsk);
   try {
     let match;
     if (path === "/ask") await renderAskHome(token);
@@ -1402,11 +1417,11 @@ async function bootstrap() {
       api("/api/health"), api("/api/catalog"), api("/api/ontology"), api("/api/skills"),
     ]);
     Object.assign(state, { health, catalog, ontology, skills });
-    $("#health-label").textContent = `${health.llmConfigured ? "LLM" : "Local"} · ${health.wikiDocuments} pages`;
+    $("#health-label").textContent = `${health.llmConfigured ? "LLM" : "本地"} · ${health.wikiDocuments} 页面`;
     $(".service-state").classList.remove("offline");
   } catch (error) {
     $(".service-state").classList.add("offline");
-    $("#health-label").textContent = "Service unavailable";
+    $("#health-label").textContent = "服务不可用";
     toast(error.message);
   }
   await Promise.all([loadRecentChats(), updateReviewBadge()]);
