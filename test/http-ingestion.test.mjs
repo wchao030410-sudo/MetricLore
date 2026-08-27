@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { MetricLoreAgent } from "../lib/agent.mjs";
+import { ConversationService } from "../lib/conversation.mjs";
 import { closeDatabase, openDatabase } from "../lib/database.mjs";
 import { IngestionService } from "../lib/ingest/service.mjs";
 import { runMigrations } from "../lib/migrations.mjs";
@@ -25,7 +26,8 @@ function buildDeps() {
   const wiki = new WikiIndex(wikiDir, ontology);
   const agent = new MetricLoreAgent({ semantic, wiki, db, ontology, skills });
   const ingestion = new IngestionService({ db, ontology, wiki });
-  return { db, semantic, ontology, skills, wiki, wikiDir, agent, ingestion };
+  const conversations = new ConversationService({ db, agent, semantic });
+  return { db, semantic, ontology, skills, wiki, wikiDir, agent, ingestion, conversations };
 }
 
 async function listen(server) {
@@ -119,6 +121,32 @@ test("HTTP review and publish endpoints complete the closed loop", async () => {
     const conflict = await fetch(`${base}/api/knowledge/candidates/${candidate.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ revision: 1, patch: { title: "x" } }) });
     assert.equal(conflict.status, 409);
     assert.equal((await conflict.json()).error.code, "CANDIDATE_REVISION_CONFLICT");
+  } finally {
+    server.close();
+    closeDatabase();
+  }
+});
+
+test("HTTP conversation API persists multi-turn dialogue", async () => {
+  const deps = buildDeps();
+  const server = createAppServer(deps);
+  const base = await listen(server);
+  try {
+    const created = await fetch(`${base}/api/conversations`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "对话" }) });
+    assert.equal(created.status, 201);
+    const convId = (await created.json()).data.conversation.id;
+
+    const post = (content) => fetch(`${base}/api/conversations/${convId}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) });
+    await post("近 14 天收入怎么样？");
+    const follow = await (await post("那按地区拆一下。")).json();
+    assert.equal(follow.data.run.contextAfter.metrics[0], "revenue");
+    assert.deepEqual(follow.data.run.contextAfter.dimensions, ["region"]);
+
+    const detail = await (await fetch(`${base}/api/conversations/${convId}`)).json();
+    assert.equal(detail.data.conversation.messages.length, 4);
+
+    const deleted = await fetch(`${base}/api/conversations/${convId}`, { method: "DELETE" });
+    assert.equal(deleted.status, 204);
   } finally {
     server.close();
     closeDatabase();

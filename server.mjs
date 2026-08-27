@@ -4,6 +4,7 @@ import { extname, resolve, sep } from "node:path";
 
 import { MetricLoreAgent } from "./lib/agent.mjs";
 import { loadEnv, ROOT } from "./lib/config.mjs";
+import { ConversationService } from "./lib/conversation.mjs";
 import { openDatabase } from "./lib/database.mjs";
 import { parseMultipart } from "./lib/http/multipart.mjs";
 import { IngestionService } from "./lib/ingest/service.mjs";
@@ -87,11 +88,12 @@ function defaultDeps() {
   const wiki = new WikiIndex(undefined, ontology);
   const agent = new MetricLoreAgent({ semantic, wiki, db, ontology, skills });
   const ingestion = new IngestionService({ db, ontology, wiki });
-  return { db, semantic, ontology, skills, wiki, agent, ingestion };
+  const conversations = new ConversationService({ db, agent, semantic });
+  return { db, semantic, ontology, skills, wiki, agent, ingestion, conversations };
 }
 
 export function createAppServer(deps = defaultDeps()) {
-  const { semantic, ontology, skills, wiki, agent, ingestion } = deps;
+  const { semantic, ontology, skills, wiki, agent, ingestion, conversations } = deps;
 
   const streamJobEvents = (req, res, jobId) => {
     const snapshot = ingestion.getJob(jobId);
@@ -135,6 +137,68 @@ export function createAppServer(deps = defaultDeps()) {
         return json(res, 200, { rows: result.rows, metrics: result.metrics, dimensions: result.dimensions, timeGrain: result.timeGrain });
       }
       if (req.method === "POST" && url.pathname === "/api/chat") return json(res, 200, await agent.answer((await body(req)).message));
+
+      // ---- v0.2 Conversation API ----
+      const runEvents = url.pathname.match(/^\/api\/conversations\/([^/]+)\/runs\/([^/]+)\/events$/);
+      const conversationMessages = url.pathname.match(/^\/api\/conversations\/([^/]+)\/messages$/);
+      const conversationDetail = url.pathname.match(/^\/api\/conversations\/([^/]+)$/);
+      const runCancel = url.pathname.match(/^\/api\/runs\/([^/]+)\/cancel$/);
+      const runClarify = url.pathname.match(/^\/api\/runs\/([^/]+)\/clarifications$/);
+      const messageRetry = url.pathname.match(/^\/api\/messages\/([^/]+)\/retry$/);
+
+      if (req.method === "POST" && url.pathname === "/api/conversations") {
+        const payload = await body(req);
+        const conversation = conversations.createConversation({ title: payload.title });
+        return ok(res, 201, { conversation });
+      }
+      if (req.method === "GET" && url.pathname === "/api/conversations") {
+        const { items, nextCursor } = conversations.listConversations({ status: url.searchParams.get("status") || undefined, limit: url.searchParams.get("limit") || undefined, cursor: url.searchParams.get("cursor") || undefined });
+        return ok(res, 200, { conversations: items, nextCursor });
+      }
+      if (req.method === "POST" && conversationMessages) {
+        const payload = await body(req);
+        const result = await conversations.submitMessage(decodeURIComponent(conversationMessages[1]), payload.content, { contextPatch: payload.contextPatch });
+        return ok(res, 200, result);
+      }
+      if (req.method === "GET" && runEvents) {
+        const run = conversations.getRun(decodeURIComponent(runEvents[2]));
+        if (!run) return err(res, 404, "NOT_FOUND", "运行不存在");
+        res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "connection": "keep-alive", "x-content-type-options": "nosniff" });
+        for (const event of run.events) res.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify({ schemaVersion: "0.2", runId: run.id, sequence: event.sequence, ...event.payload })}\n\n`);
+        res.end();
+        return;
+      }
+      if (req.method === "POST" && runCancel) {
+        const run = conversations.cancelRun(decodeURIComponent(runCancel[1]));
+        if (!run) return err(res, 404, "NOT_FOUND", "运行不存在");
+        return ok(res, 200, { run });
+      }
+      if (req.method === "POST" && runClarify) {
+        const payload = await body(req);
+        const result = await conversations.resolveClarification(decodeURIComponent(runClarify[1]), { optionId: payload.optionId });
+        return ok(res, 200, result);
+      }
+      if (req.method === "POST" && messageRetry) {
+        const result = await conversations.retryMessage(decodeURIComponent(messageRetry[1]));
+        return ok(res, 200, result);
+      }
+      if (req.method === "GET" && conversationDetail) {
+        const conversation = conversations.getConversation(decodeURIComponent(conversationDetail[1]));
+        if (!conversation) return err(res, 404, "NOT_FOUND", "会话不存在");
+        return ok(res, 200, { conversation });
+      }
+      if (req.method === "PATCH" && conversationDetail) {
+        const payload = await body(req);
+        const conversation = conversations.updateConversation(decodeURIComponent(conversationDetail[1]), { title: payload.title, status: payload.status });
+        if (!conversation) return err(res, 404, "NOT_FOUND", "会话不存在");
+        return ok(res, 200, { conversation });
+      }
+      if (req.method === "DELETE" && conversationDetail) {
+        const deleted = conversations.deleteConversation(decodeURIComponent(conversationDetail[1]));
+        if (!deleted) return err(res, 404, "NOT_FOUND", "会话不存在");
+        res.writeHead(204, { "x-content-type-options": "nosniff" });
+        return res.end();
+      }
 
       // ---- v0.2 Wiki Builder API ----
       const jobEvents = url.pathname.match(/^\/api\/knowledge\/jobs\/([^/]+)\/events$/);
