@@ -2,40 +2,123 @@
 
 # MetricLore
 
-### Ontology-grounded Data Agent & Wiki Builder
+### 面向数据与知识治理的可信 Agent 工作台
 
-把散落的业务文档构建成可追溯 Wiki，让 Agent 基于统一口径连续问数、分析和追问。
+把业务知识、指标口径、数据查询与 Agent 编排放进同一条工作流，让每一次数据回答都**有口径、有知识、有证据**。
 
 [![Release](https://img.shields.io/badge/release-v0.2.0-2563EB)](CHANGELOG.md)
-[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![SQLite](https://img.shields.io/badge/SQLite-local--first-003B57?logo=sqlite&logoColor=white)](https://sqlite.org/)
-[![Evaluation](https://img.shields.io/badge/evals-120%20cases%20%2B%2030%20dialogues-6C5CE7)](#评测)
+[![Evaluation](https://img.shields.io/badge/evals-120%20cases%20%2B%2030%20dialogues-6C5CE7)](#评测与质量)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Build the Wiki. Ask the data. Trace the answer.**
 
 </div>
 
-MetricLore 是一个本地优先的数据智能体工作台。它把语义层、知识本体、LLM Wiki 和 Skill 编排放进同一条执行链：用户提交问题，Agent 继承会话上下文、生成公开计划、调用受治理工具，并把答案、图表、来源和运行轨迹保存在同一条消息中。
+MetricLore 是一个本地优先的数据智能体工作台。它回答的不仅是"模型能生成什么"，而是更关键的问题：**如何让一个会使用数据的 Agent 值得信任**。为此，它把「知识构建、指标语义、多轮编排、人工治理与版本化评测」组织成一条完整的产品链路：用户把业务文档构建为可追溯的知识库，用自然语言连续问数、拆解和分析，并在同一条消息里看到答案、图表、来源与执行轨迹。
 
-仓库自带可运行的 Web 界面、Node.js 服务、SQLite 合成数据、Markdown Wiki、9 类本体实体、7 个 Skill Package，以及从文档导入到审核发布的 Wiki Builder。默认的确定性运行模式可离线演示；配置 OpenAI-compatible 模型后启用函数调用循环。
+## 设计理念
 
-## 可以做什么
+MetricLore 的产品设计围绕六个原则展开。它们共同定义了系统对 Agent 的默认假设：**Agent 有用，但必须在可验证的边界内工作。**
 
-| 用户任务 | 系统执行 | 可检查的结果 |
+1. **能力先于提示词。** 不依赖 prompt 约束模型，而是用「能力识别 → Skill 边界 → 工具白名单」把模型能做的事限定在可检查的范围内。模型负责理解与选择，代码负责执行与约束。
+
+2. **语义层拥有数据访问权。** 模型永远不直接接触 SQL。数据只能通过注册指标、维度、日期范围与参数化筛选访问；指标口径由语义层统一管理，模型与提示词都无法绕过。
+
+3. **知识与数据分路。** 口径问题查知识库，数值问题走语义查询，分析问题做保守描述。知识与数据是两个正交的信任来源，分开治理、合流回答，避免"模型凭记忆补全口径"。
+
+4. **证据先于表达。** 回答中的关键声明必须绑定来源——知识页、查询范围或执行证据。没有证据的部分明确标注边界；相关性永远不被写成因果。
+
+5. **可观测性默认开启。** 每条回答伴随一份公开执行轨迹：任务计划、Skill、工具调用、数据范围、校验结果与证据账本。模型私有推理不进入任何界面、事件或存储。
+
+6. **人在环上，系统在环下。** 自动抽取只产生候选，知识发布必须经过审核；系统负责生成、校验与建议，人负责判断与放行。已验证的知识受冲突保护，不会被自动覆盖。
+
+## 编排模型：一条消息的生命周期
+
+MetricLore 的核心不是单次问答，而是一套可检查的编排过程。一条用户消息从进入到落地的完整状态机：
+
+```text
+用户提问
+  → 继承会话上下文（指标 · 时间范围 · 维度 · 筛选）
+  → 能力识别（口径 / 发现 / 问数 / 分析 / 安全）
+  → 选择 Skill（工具白名单 + 步数预算）
+  → 生成公开计划（目标 · 步骤 · 预算 · 完成条件）
+  → 执行受治理工具（语义查询 · 知识检索 · 图谱遍历 · 证据归集）
+  → 回答校验（数字 · 范围 · 引用 · 表达边界）
+  → 回答 + 图表 + 来源 + 执行轨迹
+```
+
+以一次真实的连续分析为例：
+
+```text
+用户     华东为什么变化？
+上下文   收入 · 近 14 天 · 地区 · 华东
+能力     analysis
+Skill   comparative-analysis
+计划     semantic_catalog → metric_query → compare_periods
+         → dimension_breakdown → submit_evidence
+校验     validate_answer
+状态     verified
+```
+
+编排层的几个关键设计：
+
+- **Skill 是能力边界。** 每个 Skill 声明自己的适用场景、工具白名单、执行顺序与步数预算。模型只能在当前任务授权的能力范围内行动，跨能力调用会被运行时拒绝。
+- **上下文是结构化状态，不是聊天历史。** 指标、时间范围、维度与筛选条件以结构化形式跨轮继承。"那按地区拆一下""为什么下降""这个指标口径是什么"这类追问不再需要重复完整问题；本轮新增的条件会被明确标记。
+- **不明确就澄清，而不是猜测。** 当问题无法确定指标时，系统暂停并给出候选，用户选择后沿原计划继续——避免把模糊意图当成确定指令执行。
+- **工具是受治理的接口。** 每个工具带结构化输入契约；宿主统一管理权限、超时、重复调用、结果上限与证据登记。
+- **安全请求在入口拦截。** SQL、密钥、提示词注入等请求在能力识别阶段即被拒绝，不会进入任何工具执行。
+
+## 产品能力：一条从知识到答案的完整旅程
+
+### 1. 构建知识（Build）
+
+上传文件、文件夹或 ZIP，系统执行「解析 → 分段 → 实体抽取 → 本体校验 → 冲突检测 → 人工审核 → 版本化发布」：
+
+- 支持 Markdown、TXT、CSV、SQL、HTML、PDF、DOCX、XLSX 与 ZIP，解析保留文件、页码、章节、工作表等来源定位。
+- 实体与关系可由本地规则抽取，也可在确认传输范围后由模型辅助抽取；所有结果都必须通过本体 Schema 校验。
+- 审核队列支持编辑、合并、批准、驳回与批量操作；发布记录实体版本，已验证页面受冲突保护。
+- 发布后索引与图谱立即热更新，新知识即刻可被 Agent 检索。
+
+### 2. 提问与分析（Ask）
+
+- **自然语言问数。** 结果以图表与可排序表格呈现，并回显实际查询范围；支持 CSV 与 Markdown 导出。
+- **连续追问。** 在多轮中继承指标、时间、维度与筛选，并给出"继续追问"建议，一键进入下一步分析。
+- **口径与血缘。** 从指标出发，沿本体关系追溯定义、计算方式、分子分母、维度、数据表、规则与来源。
+- **保守分析。** 分析输出"变化 + 维度拆分 + 证据边界"三部分；没有额外证据时明确说明不能归因原因。
+
+### 3. 治理与核查（Govern）
+
+- **多语义模型。** 一个工作区可维护多个语义模型，每个模型绑定一张事实表与独立的指标、维度目录；可随时切换"正在查看"的模型，并选择其中一个作为 Agent 当前模型。指标支持原子与派生两种形态，注册后立即进入识别、口径与查询链路。
+- **知识审核。** 候选可对照原文编辑、合并、批准或驳回；重复与冲突（如已发布实体）会被标记并保护。
+- **来源定位。** 回答中的每条证据都可一键打开原文片段与定位信息。
+
+### 4. 评测与质量（Evaluate）
+
+评测是产品能力，而不是测试脚本。每次评测运行都会存档三份快照：**评测集版本、知识内容（含 Wiki 发布版本）、语义模型**，因此可以回溯、对比任意一次历史运行。
+
+质量体系由五个互补的评测套件构成：
+
+| 套件 | 衡量什么 | 关键指标 |
 | --- | --- | --- |
-| 连续问数 | 继承指标、时间、维度和筛选条件 | 图表、可排序表格、查询范围 |
-| 对比分析 | 组合趋势、前期对比和维度拆分 | 变化描述、贡献维度、证据边界 |
-| 指标问答 | 读取语义目录、Wiki 页面和本体关系 | 定义、计算规则、来源、血缘路径 |
-| 指标注册 | 在语义模型页登记原子指标或派生指标 | 字段校验、公式预览、即时问数与口径问答 |
-| Wiki 构建 | 解析 PDF、DOCX、XLSX、CSV、Markdown、SQL、HTML、TXT 和 ZIP | 候选实体、来源定位、校验结果 |
-| 知识治理 | 编辑、冲突检测、批量审核、版本化发布 | Review 记录、Wiki 版本、热更新索引 |
-| Agent 观测 | 持久化 Plan、Skill、Tool、Evidence 和校验事件 | 消息级 Public Trace、停止与重试 |
-| 本体探索 | 遍历 9 类实体与 11 类关系 | 可筛选的知识图谱与双向邻居 |
+| 单轮 Agent 回归 | 路由与工具是否正确 | 通过率、三次运行一致率、平均/P95 耗时 |
+| 多轮上下文 | 连续对话能否正确继承 | 上下文准确率、会话隔离率 |
+| 知识构建闭环 | 摄入→审核→发布→引用是否跑通 | 专项检查通过率 |
+| 数据准确率 | 受治理查询结果是否等于独立重算 | 数值比对准确率、查询耗时 |
+| LLM-as-a-Judge | 知识问答的回答质量 | 正确性 / 忠实性 / 完整性 / 引用质量 |
 
-## 5 分钟体验
+评测页可一键发起后台运行，进度实时可见；Judge 评测集支持从界面版本化管理，裁判模型独立配置，不影响 Agent 主模型。
 
-运行环境为 Node.js 22.13 或更高版本。
+## 信任如何建立
+
+MetricLore 的信任模型由三层构成：
+
+1. **证据账本。** 每个运行记录回答使用的知识来源与查询范围，回答声明与证据一一绑定。
+2. **公开轨迹。** Skill、工具、参数、耗时与校验状态全程公开；模型私有思维链不进入任何界面与存储。
+3. **确定性兜底。** 未配置模型或模型服务异常时，确定性编排接管已支持的任务——问数、口径与知识问答仍可完整运行，系统不会静默降级为"猜答案"。
+
+## 快速开始
+
+运行环境：Node.js 22.13+，本地 SQLite，无外部服务依赖。
 
 ```bash
 git clone https://github.com/wchao030410-sudo/MetricLore.git
@@ -45,147 +128,13 @@ npm ci
 npm start
 ```
 
-打开 <http://127.0.0.1:3000>。首次启动会创建本地 SQLite 数据库，并载入 90 天电商合成数据。
+打开 <http://127.0.0.1:3000>。首次启动自动创建本地数据库并载入 90 天电商合成数据，随后可以直接体验：
 
-### 跑一次多轮分析
+1. **体验一条多轮分析**：在「智能问答」依次发送 `近 14 天收入怎么样？` → `那按地区拆一下。` → `华东为什么变化？` → `这个指标口径是什么？`，观察上下文继承与消息级执行轨迹。
+2. **构建自己的知识库**：在「知识构建」上传文档（仓库提供 [`examples/wiki-builder/ecommerce-growth`](examples/wiki-builder/ecommerce-growth) 与 [`subscription-saas`](examples/wiki-builder/subscription-saas) 两套示例），在「审核队列」批准候选并发布，回到「智能问答」用新知识继续提问。
+3. **跑一次质量评测**：在「评测」页点击「开始评测」，查看五套件指标、运行历史与版本快照。
 
-在「智能问答」中依次发送：
-
-```text
-近 14 天收入怎么样？
-那按地区拆一下。
-华东为什么变化？
-这个指标口径是什么？
-```
-
-四条消息共享同一份结构化上下文。每条回答都拥有独立 Run，可以展开查看 Skill Plan、工具状态、数据范围、Evidence 和校验结果。
-
-### 用自己的文档构建 Wiki
-
-1. 打开「Wiki 构建」。
-2. 上传文件、文件夹或 ZIP；第一次体验可直接选择 [`examples/wiki-builder/ecommerce-growth`](examples/wiki-builder/ecommerce-growth) 或 [`examples/wiki-builder/subscription-saas`](examples/wiki-builder/subscription-saas)。
-3. 在「审核队列」点击每行的「审核」，核对候选内容、来源定位、本体关系和冲突；无问题的候选也可以勾选后批量批准。
-4. 批准并发布，在「Wiki 浏览」和「本体图」中查看新知识。
-5. 回到「智能问答」，用刚发布的知识继续提问。
-
-Docker 也可以直接启动：
-
-```bash
-docker compose up --build
-```
-
-## 架构
-
-```mermaid
-flowchart TB
-    U[Workbench / REST API] --> C[Conversation Service + SSE]
-
-    subgraph ORCH[Agent Orchestration]
-        C --> X[Structured Context]
-        X --> R[Capability Resolver]
-        R --> P[Skill Plan]
-        P --> A[Agent Runtime]
-        L[OpenAI-compatible LLM<br/>optional] -. tool calling .-> A
-    end
-
-    subgraph TOOLS[Governed Tools]
-        A --> ST[Semantic Tools]
-        A --> WT[Wiki Tools]
-        A --> ET[Evidence Tools]
-    end
-
-    subgraph KNOWLEDGE[Knowledge and Data]
-        ST --> SM[Semantic Model]
-        SM --> DB[(SQLite Facts)]
-        WT --> WI[Markdown Wiki + FTS5]
-        WI <--> ON[Ontology Graph]
-    end
-
-    DB --> E[Evidence Ledger]
-    WI --> E
-    ON --> E
-    ET --> E
-    E --> V[Answer Review]
-    V --> M[Answer + Chart + Sources + Trace]
-    M --> C
-
-    subgraph BUILDER[Wiki Builder]
-        D[Documents / Folder / ZIP] --> PS[Parse and Extract]
-        PS --> KC[Knowledge Candidates]
-        KC --> OV[Ontology Validation + Conflict Check]
-        OV --> HR[Human Review]
-        HR --> VP[Versioned Publish]
-    end
-
-    VP --> WI
-```
-
-### 一条消息如何运行
-
-```text
-Question    华东为什么变化？
-Context     收入 · 近 14 天 · 地区 · 华东
-Capability analysis
-Skill       comparative-analysis
-Plan        semantic_catalog
-            → metric_query
-            → compare_periods
-            → dimension_breakdown
-            → submit_evidence
-Review      validate_answer
-Status      verified
-```
-
-`Capability Resolver` 识别知识问答、语义发现、问数、分析和安全请求。`Skill Registry` 提供工具白名单、执行顺序和步数预算。`Agent Runtime` 管理调用、超时、取消、证据归集和回答校验。前端展示这些公开事件，模型私有思维过程不进入事件流。
-
-## Wiki、语义层和本体
-
-### Wiki Builder
-
-Wiki Builder 使用「解析 → 抽取 → 校验 → 审核 → 发布」工作流。每个候选保留文件、页码、章节、行号、工作表或行号定位。发布时生成带 Frontmatter 的 Markdown 页面，记录发布批次和实体版本，并刷新全文检索与图谱索引。
-
-规则抽取可完全在本地执行。`llm_assisted` 模式通过 OpenAI-compatible 接口补充抽取，界面会提示传输范围。
-
-### Semantic Layer
-
-[`config/semantic-model.json`](config/semantic-model.json) 提供基础指标、维度、时间字段和物理映射。运行后也可以在「语义模型」页面注册原子指标或两个原子指标相除的派生指标；自定义指标保存在本地 SQLite，保存后立即进入 Agent 的识别、口径问答与查询链路。所有问数都经过参数化查询生成器，派生指标使用同一份受治理定义。
-
-### Ontology + LLM Wiki
-
-[`ontology/schema.json`](ontology/schema.json) 定义 `Metric`、`Dimension`、`BusinessProcess`、`BusinessDomain`、`DataAsset`、`DataField`、`BusinessRule`、`Dashboard` 和 `Source`，并约束 11 类关系。
-
-```text
-Metric ── measures ───────> BusinessProcess ── occursIn ──> BusinessDomain
-Metric ── derivedFrom ────> Metric
-Metric ── slicedBy ───────> Dimension
-Metric ── storedIn ───────> DataAsset ── contains ────────> DataField
-Metric ── governedBy ─────> BusinessRule
-Dashboard ── displays ────> Metric
-```
-
-Markdown Wiki 负责版本管理和来源追踪；FTS5、关键词、别名和关系图共同完成检索。当前内置示例包含 28 篇文档与 22 个实体。
-
-## Skill Package
-
-每个 Skill 都有机器可读配置和面向执行器的操作说明：
-
-```text
-skills/wiki-answer/
-├── skill.json   # 触发能力、工具白名单、最大步数
-└── SKILL.md     # 执行顺序、证据要求、输出约定
-```
-
-| Skill | 用途 | 最大步骤 |
-| --- | --- | ---: |
-| `wiki-answer` | 指标口径、字段、来源和血缘 | 5 |
-| `semantic-discovery` | 指标、维度和业务过程发现 | 4 |
-| `metric-query` | 单点、趋势、周期和维度查询 | 5 |
-| `comparative-analysis` | 周期对比与维度拆分 | 6 |
-| `knowledge-ingest` | 候选知识生成 | 4 |
-| `answer-review` | 数字、范围、引用和表达检查 | 2 |
-| `safety-refusal` | SQL、密钥和越权请求处理 | 1 |
-
-配置模型：
+可选：在 `.env` 配置 OpenAI-compatible 模型后，Agent 启用函数调用循环；未配置时确定性路径完整可用。
 
 ```bash
 LLM_BASE_URL=https://api.openai.com/v1
@@ -193,77 +142,16 @@ LLM_API_KEY=your_api_key
 LLM_MODEL=gpt-4.1-mini
 ```
 
-模型负责理解问题、选择已授权工具和组织答案；运行时负责权限、预算、查询执行、证据和校验。模型服务不可用时，确定性工作流会接管已支持的任务。
+完整接口与 SSE 事件契约见 [`docs/v0.2/API_AND_EVENTS.md`](docs/v0.2/API_AND_EVENTS.md)。
 
-## 评测
+## 设计边界与演进方向
 
-```bash
-npm test                 # 单元与集成测试
-npm run health           # Wiki、本体、关系和来源健康检查
-npm run eval             # 120 条单轮用例，每条重复 3 次
-npm run eval:multi-turn  # 30 组、120 轮连续对话
-npm run eval:wiki        # 摄入、冲突、引用、发布和索引专项评测
-npm run audit            # 密钥与内部标识扫描
-npm run verify           # 完整发布门禁
-```
+当前版本面向本地、单工作区、单用户场景，强调设计闭环可被完整验证。以下能力属于后续演进方向：
 
-当前基线：55 条自动化测试；120 条单轮用例通过率与三次运行一致率 100%；30 组多轮评测上下文准确率与会话隔离率 100%；15 项 Wiki Builder 专项检查全部通过。评测报告写入 `outputs/evals/`。工作台的「评测」页面同时展示三个评测集的定义、公式、样本规模和适用边界。
-
-## 接入自己的数据与知识
-
-1. 将事实数据导入 SQLite，或为目标数据库实现查询适配器。
-2. 在「语义模型」页面注册指标，或编辑 [`config/semantic-model.json`](config/semantic-model.json) 维护基础指标、维度、别名和物理字段。
-3. 通过 Wiki Builder 导入业务文档，审核候选实体和本体关系后发布。
-4. 为新增指标、知识和 Skill 添加测试与评测用例。
-5. 运行 `npm run verify` 检查完整链路。
-
-## API
-
-主要接口：
-
-```text
-POST /api/conversations
-POST /api/conversations/:id/messages
-GET  /api/conversations/:id/runs/:runId/events
-
-POST /api/knowledge/jobs
-GET  /api/knowledge/jobs/:id/candidates
-POST /api/knowledge/candidates/:id/review
-POST /api/knowledge/jobs/:id/publish
-
-GET  /api/wiki/pages
-GET  /api/wiki/pages/:key
-GET  /api/wiki/pages/:key/source
-GET  /api/wiki/graph
-
-GET  /api/catalog
-POST /api/semantic/metrics
-POST /api/query
-POST /api/chat
-```
-
-完整请求、响应和 SSE 事件契约见 [`docs/v0.2/API_AND_EVENTS.md`](docs/v0.2/API_AND_EVENTS.md)。
-
-## 项目结构
-
-```text
-MetricLore/
-├── config/       semantic model
-├── data/         migrations, SQLite seed and local database
-├── examples/     importable Wiki Builder examples
-├── evals/        single-turn and multi-turn evaluation sets
-├── lib/          orchestration, conversations, tools, wiki and ingestion
-├── ontology/     entity and relation schema
-├── public/       Agent Workbench
-├── scripts/      eval, health, audit and local utilities
-├── skills/       declarative Skill Packages
-├── test/         unit and integration tests
-└── wiki/         versioned business knowledge
-```
-
-架构决策见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，v0.2 实施记录见 [`docs/V0.2_ITERATION_PLAN.md`](docs/V0.2_ITERATION_PLAN.md)，版本变化见 [`CHANGELOG.md`](CHANGELOG.md)，从 v0.1 升级见 [`docs/v0.2/UPGRADING.md`](docs/v0.2/UPGRADING.md)。
-
-当前版本面向本地单用户演示与扩展开发。数据库连接器、身份认证、行列权限、查询配额、向量检索和多租户属于后续演进方向。
+- **接入真实数据资产**：数据库连接器与查询适配器，让语义模型连接真实业务表。
+- **企业化治理**：身份认证、多租户、行列权限、查询配额与持久化审计。
+- **更强的检索与理解**：向量检索与重排序，以及更深层的分析诊断（根因假设、实验证据）。
+- **更丰富的内容**：扫描件 OCR、多模态知识提取与在线文档连接器。
 
 ## License
 
