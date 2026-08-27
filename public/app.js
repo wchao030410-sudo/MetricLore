@@ -1503,6 +1503,11 @@ async function renderSemantic(query, token) {
   $("#workspace").replaceChildren(shell);
   if (token !== state.viewToken) return;
   const model = state.catalog;
+  const focus = query?.get("focus");
+  if (focus && focus !== model.model) {
+    selectSemanticModel(focus);
+    return;
+  }
   const registry = model.registry || { physicalColumns: [], customMetricKeys: [] };
   const selectedModel = (registry.models || []).find((item) => item.id === model.model);
   const modelSwitcher = el("section", { class: "semantic-model-manager" },
@@ -1668,7 +1673,7 @@ async function renderEvaluation(token) {
       latestRun?.status === "failed" ? el("div", { class: "error-state" }, `最近评测失败：${latestRun.error?.message || "未知错误"}`) : null,
       el("section", { class: "stat-grid quality-stat-grid" },
         stat("单轮通过率", percent(single?.passRate), `${single?.passed ?? "—"} / ${single?.caseCount ?? "—"} 条`),
-        stat("数据准确率", percent(dataEval?.accuracy), dataEval ? `${dataEval.passedChecks} / ${dataEval.valueCheckCount} 个数值` : "未运行"),
+        stat("数据准确率", percent(dataEval?.accuracy), dataEval ? `${dataEval.passedChecks} / ${dataEval.valueCheckCount} 个数值 · ${dataEval.modelLabel || dataEval.modelId || "当前模型"}` : "未运行"),
         stat("知识问答 Judge", judgeEval?.score == null ? "待配置" : `${(judgeEval.score * 100).toFixed(1)}`, judgeEval?.score == null ? (llmConfigured ? "等待运行" : "需要 LLM API") : `${judgeEval.scoredCases} / ${judgeEval.caseCount} 条`),
         stat("平均耗时", formatDuration(report?.averageLatencyMs), "单轮与多轮 Agent 平均")),
       el("section", { class: "snapshot-grid" },
@@ -1849,6 +1854,13 @@ async function renderDataSourceDetail(sourceId, token) {
     const previewRows = el("div", { class: "table-panel" }, el("table", { class: "work-table" },
       el("thead", {}, el("tr", {}, source.columns.map((column) => el("th", {}, column.name)))),
       el("tbody", {}, source.preview.slice(0, 20).map((row) => el("tr", {}, row.map((cell) => el("td", {}, cell)))))));
+    const modelSection = source.models?.length ? el("div", { class: "table-panel" }, el("table", { class: "work-table" },
+      el("thead", {}, el("tr", {}, ["语义模型", "状态", "数据准确率评测", "操作"].map((head) => el("th", {}, head)))),
+      el("tbody", {}, source.models.map((model) => el("tr", {},
+        el("td", {}, el("strong", {}, model.label), el("small", {}, model.id)),
+        el("td", {}, statusPill(model.active ? "active" : "archived")),
+        el("td", {}, "评测运行后在此展示" + (model.active ? "（当前模型）" : "")),
+        el("td", {}, action("打开模型", "text-button", () => navigate(`/data/semantic?focus=${encodeURIComponent(model.id)}`)))))))) : null;
     shell.replaceChildren(pageHeader("数据源", source.name, `${source.table} · ${source.rowCount} 行 · ${source.kind === "builtin" ? "内置数据源" : "用户上传"}`,
       [
         action("基于此表创建语义模型", "button primary", () => navigate(`/data/semantic?table=${encodeURIComponent(source.table)}`)),
@@ -1857,6 +1869,8 @@ async function renderDataSourceDetail(sourceId, token) {
           catch (error) { toast(error.message); }
         }) : null,
       ]),
+      source.models?.length ? el("div", { class: "section-heading" }, el("h2", {}, "关联语义模型"), el("small", {}, `${source.modelCount} 个 · data-accuracy 评测对当前模型执行`)) : null,
+      modelSection,
       el("div", { class: "section-heading" }, el("h2", {}, "列结构"), el("small", {}, `${source.columns.length} 列`)),
       columns,
       el("div", { class: "section-heading" }, el("h2", {}, "数据预览"), el("small", {}, "前 20 行")),

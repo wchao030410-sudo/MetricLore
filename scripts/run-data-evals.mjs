@@ -102,6 +102,7 @@ const sorted = [...queryLatencies].sort((a, b) => a - b);
 const report = {
   generatedAt: new Date().toISOString(),
   modelId: model.model,
+  modelLabel: model.label,
   queryCount: scenarios.length,
   metricCount: metricKeys.length,
   valueCheckCount,

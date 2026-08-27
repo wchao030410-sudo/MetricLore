@@ -102,6 +102,8 @@ test("builtin source and model-referenced source are protected from deletion", a
 
   const source = await dataSources.create({ name: "被引用", buffer: Buffer.from(SAMPLE_CSV), filename: "b.csv" });
   semantic.registerModel({ id: "ref_model", label: "引用模型", table: source.table, timeColumn: "date" });
+  const detail = dataSources.get(source.id);
+  assert.ok(detail.models.some((model) => model.id === "ref_model" && model.label === "引用模型"));
   assert.throws(() => dataSources.remove(source.id), (error) => error.code === "SOURCE_REFERENCED_BY_MODEL");
   close();
 });

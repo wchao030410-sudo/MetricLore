@@ -201,7 +201,7 @@ export function createAppServer(deps = defaultDeps()) {
             averageLatencyMs: multi.averageLatencyMs, p95LatencyMs: multi.p95LatencyMs,
           } : null,
           wiki: wikiEval ? { checkCount: wikiEval.checkCount, passed: wikiEval.passed, failed: wikiEval.failed, passRate: wikiEval.checkCount ? wikiEval.passed / wikiEval.checkCount : 0 } : null,
-          data: dataEval ? { modelId: dataEval.modelId, queryCount: dataEval.queryCount, metricCount: dataEval.metricCount, valueCheckCount: dataEval.valueCheckCount, passedChecks: dataEval.passedChecks, failedChecks: dataEval.failedChecks, accuracy: dataEval.accuracy, averageQueryMs: dataEval.averageQueryMs, p95QueryMs: dataEval.p95QueryMs } : null,
+          data: dataEval ? { modelId: dataEval.modelId, modelLabel: dataEval.modelLabel || null, queryCount: dataEval.queryCount, metricCount: dataEval.metricCount, valueCheckCount: dataEval.valueCheckCount, passedChecks: dataEval.passedChecks, failedChecks: dataEval.failedChecks, accuracy: dataEval.accuracy, averageQueryMs: dataEval.averageQueryMs, p95QueryMs: dataEval.p95QueryMs } : null,
           judge: judgeEval ? { status: judgeEval.status, configured: judgeEval.configured, judgeModel: judgeEval.judgeModel, datasetVersion: judgeEval.datasetVersion, caseCount: judgeEval.caseCount, scoredCases: judgeEval.scoredCases, failedCases: judgeEval.failedCases, score: judgeEval.score, dimensions: judgeEval.dimensions, averageAgentLatencyMs: judgeEval.averageAgentLatencyMs, averageJudgeLatencyMs: judgeEval.averageJudgeLatencyMs, message: judgeEval.message } : null,
         } : null;
         return ok(res, 200, {
