@@ -1289,40 +1289,54 @@ async function showMetricContext(key, metric) {
   openContext({ eyebrow: "指标", title: metric.label, content: loading() });
   let page = null;
   try { page = (await api(`/api/wiki/pages/${encodeURIComponent(`metric-${key.replaceAll("_", "-")}`)}`)).page; } catch { /* 目录信息仍可展示 */ }
-  const formula = metric.type === "atomic" ? `${metric.aggregation}(${metric.column})` : `${metric.numerator} / ${metric.denominator}${metric.scale ? ` × ${metric.scale}` : ""}`;
+  const formula = metric.formula || (metric.type === "atomic" ? `${metric.aggregation}(${metric.column})` : `${metric.numerator} / ${metric.denominator}${metric.scale ? ` × ${metric.scale}` : ""}`);
+  const modelLine = metric.modelLabel ? `所属模型：${metric.modelLabel}（${metric.modelId}）` : null;
   openContext({
     eyebrow: "受治理指标", title: metric.label,
-    content: [section("定义", el("p", {}, metric.description)),
-      section("语义映射", contextList([`键：${key}`, `类型：${metric.type}`, `公式：${formula}`, `格式：${metric.format}`])),
+    content: [section("定义", el("p", {}, metric.description || "—")),
+      section("语义映射", contextList([`键：${key}`, `类型：${metric.type || "—"}`, `公式：${formula}`, `格式：${metric.format || "—"}`, modelLine].filter(Boolean))),
       page ? section("本体关联", contextList(Object.entries(page.relations || {}).flatMap(([relation, targets]) => targets.map((target) => `${relation} → ${target}`)))) : null,
       section("试一试", action("问问这个指标", "button primary", () => createConversation(`近 14 天${metric.label}趋势怎么样？`)))],
   });
 }
 
 async function renderMetrics(token) {
-  const shell = el("div", { class: "page-shell" });
+  const shell = el("div", { class: "page-shell" }, loading());
   $("#workspace").replaceChildren(shell);
-  if (token !== state.viewToken) return;
-  const metrics = Object.entries(state.catalog?.metrics || {});
-  const search = el("input", { placeholder: "搜索指标、别名或物理字段", "aria-label": "搜索指标" });
-  const list = el("div", { class: "metric-list" });
-  const draw = () => {
-    const query = search.value.trim().toLowerCase();
-    const visible = metrics.filter(([key, metric]) => `${key} ${metric.label} ${metric.description} ${(metric.aliases || []).join(" ")} ${metric.column || ""}`.toLowerCase().includes(query));
-    list.replaceChildren(...visible.map(([key, metric]) => {
-      const formula = metric.type === "atomic" ? `${metric.aggregation}(${metric.column})` : `${metric.numerator} / ${metric.denominator}`;
-      return el("button", { class: "metric-row", type: "button", onClick: () => showMetricContext(key, metric) },
-        el("span", {}, el("strong", {}, metric.label), el("small", {}, key)),
-        el("span", {}, metric.description), el("code", {}, formula), statusPill("verified"));
-    }));
-  };
-  search.addEventListener("input", draw); draw();
-  shell.append(pageHeader("语义目录", "指标", "注册指标是 Agent 查询数据的唯一入口；每个指标都有稳定 key、定义、公式和格式。"),
-    el("div", { class: "toolbar", style: "grid-template-columns:1fr auto" },
-      el("div", { class: "field" }, el("span", {}, "搜索"), search),
-      action("问数据", "button primary", () => createConversation())),
-    list);
-  defaultContext("指标", "选择指标查看公式、物理映射、本体关系和示例问题。");
+  try {
+    const result = await api("/api/semantic/metrics");
+    if (token !== state.viewToken) return;
+    const allMetrics = result.metrics || [];
+    const models = [...new Map(allMetrics.map((item) => [item.modelId, { id: item.modelId, label: item.modelLabel, active: item.modelActive }])).values()];
+    const search = el("input", { placeholder: "搜索指标、定义或物理字段", "aria-label": "搜索指标" });
+    const modelFilter = el("select", { "aria-label": "按语义模型筛选" }, el("option", { value: "" }, "全部模型"),
+      models.map((model) => el("option", { value: model.id, selected: model.active }, `${model.label}${model.active ? "（当前）" : ""}`)));
+    const list = el("div", { class: "metric-list" });
+    const draw = () => {
+      const query = search.value.trim().toLowerCase();
+      const modelId = modelFilter.value;
+      const visible = allMetrics.filter((metric) =>
+        (!query || `${metric.key} ${metric.label} ${metric.description} ${metric.formula} ${metric.modelLabel}`.toLowerCase().includes(query))
+        && (!modelId || metric.modelId === modelId));
+      list.replaceChildren(...visible.map((metric) =>
+        el("button", { class: "metric-row", type: "button", onClick: () => showMetricContext(metric.key, metric) },
+          el("span", {}, el("strong", {}, metric.label), el("small", {}, metric.key)),
+          el("span", {}, el("small", { class: "metric-model-tag" }, `${metric.modelActive ? "当前 · " : ""}${metric.modelLabel}`), el("p", {}, metric.description)),
+          el("code", {}, metric.formula), statusPill(metric.source === "custom" ? "custom" : "verified"))));
+      if (!visible.length) list.replaceChildren(emptyState("没有匹配的指标", "调整搜索或切换语义模型。", "∑"));
+    };
+    search.addEventListener("input", draw); modelFilter.addEventListener("change", draw); draw();
+    shell.replaceChildren(pageHeader("语义目录", "指标", "每个指标都属于一个语义模型；同名指标在不同模型中是独立口径。",
+      [action("问数据", "button primary", () => createConversation())]),
+      el("div", { class: "toolbar", style: "grid-template-columns:1fr 220px auto" },
+        el("div", { class: "field" }, el("span", {}, "搜索"), search),
+        el("div", { class: "field" }, el("span", {}, "语义模型"), modelFilter),
+        null),
+      list);
+    defaultContext("指标", "按语义模型筛选指标，查看公式、物理映射与本体关系。");
+  } catch (error) {
+    if (token === state.viewToken) shell.replaceChildren(errorState(error));
+  }
 }
 
 function mappingCard(kind, key, item) {
@@ -1406,14 +1420,14 @@ function openMetricRegistry() {
   if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
 }
 
-function openSemanticModelRegistry() {
+function openSemanticModelRegistry(preset = {}) {
   const tables = state.catalog?.registry?.databaseTables || [];
   if (!state.catalog?.registry?.writable) { toast("当前语义目录为只读，请检查数据库迁移和写入权限"); return; }
   if (!tables.length) { toast("没有可用于建模的事实表"); return; }
   const dialog = el("dialog", { class: "metric-dialog", "aria-labelledby": "model-dialog-title" });
   const errorBox = el("div", { class: "form-error", hidden: true });
   const field = (label, control, hint = "", full = false) => el("label", { class: `field${full ? " full" : ""}` }, el("span", {}, label), control, hint ? el("small", {}, hint) : null);
-  const tableSelect = el("select", { name: "table", required: true }, tables.map((table) => el("option", { value: table.name }, table.name)));
+  const tableSelect = el("select", { name: "table", required: true }, tables.map((table) => el("option", { value: table.name, selected: table.name === preset.table }, table.name)));
   const timeSelect = el("select", { name: "timeColumn", required: true });
   const dimensionSelect = el("select", { name: "dimensionColumns", multiple: true, size: "5", "aria-label": "选择维度字段" });
   const refreshColumns = () => {
@@ -1453,7 +1467,9 @@ function openSemanticModelRegistry() {
     payload.dimensionColumns = data.getAll("dimensionColumns");
     try {
       const result = await api("/api/semantic/models", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-      state.catalog = result.catalog; dialog.close(); toast(`语义模型“${result.model.label}”已创建`); renderRoute();
+      state.catalog = result.catalog; dialog.close(); toast(`语义模型“${result.model.label}”已创建`);
+      renderRoute();
+      if (preset.fromSource) setTimeout(() => openMetricRegistry(), 250);
     } catch (error) {
       errorBox.textContent = error.message; errorBox.hidden = false; submit.disabled = false; submit.textContent = "创建模型";
     }
@@ -1482,7 +1498,7 @@ function physicalFieldCard(column) {
   return el("article", { class: "physical-field" }, el("code", {}, column.name), el("span", {}, column.type), el("small", {}, role));
 }
 
-async function renderSemantic(token) {
+async function renderSemantic(query, token) {
   const shell = el("div", { class: "page-shell" });
   $("#workspace").replaceChildren(shell);
   if (token !== state.viewToken) return;
@@ -1502,6 +1518,10 @@ async function renderSemantic(token) {
     action("＋ 注册指标", "button primary", openMetricRegistry),
   ];
   if (registry.activeModelId !== model.model) headerActions.push(action("设为 Agent 当前模型", "button amber", () => activateSemanticModel(model.model)));
+  const emptyMetrics = Object.keys(model.metrics).length === 0;
+  const metricGuide = emptyMetrics ? el("section", { class: "metric-guide" },
+    el("div", {}, el("strong", {}, "这个模型还没有注册指标"), el("p", {}, "注册一个原子指标（或由原子指标组合的派生指标）后，Agent 才能识别并查询它。")),
+    action("注册第一个指标", "button primary", openMetricRegistry)) : null;
   shell.append(pageHeader("业务口径到数据字段", "语义模型管理", "一个工作区可以维护多个语义模型。选择模型查看字段映射和指标；设为 Agent 当前模型后，问数、分析和评测会使用该模型。",
     headerActions),
     modelSwitcher,
@@ -1513,6 +1533,7 @@ async function renderSemantic(token) {
       el("article", {}, el("small", {}, "Agent 查询入口"), el("strong", {}, `${Object.keys(model.metrics).length} 指标 · ${Object.keys(model.dimensions).length} 维度`), el("code", {}, model.timeGrains.join(" / ")))),
     el("div", { class: "visible-note" }, el("strong", {}, "如何使用多个模型"),
       el("p", {}, "每个模型绑定一张事实表和独立的指标、维度目录。新增模型后先注册至少一个指标，再将它设为 Agent 当前模型。切换“正在查看”的模型不会影响正在使用的 Agent。")),
+    metricGuide,
     el("section", { class: "stat-grid" }, stat("当前模型", model.model), stat("事实表", model.table), stat("注册指标", Object.keys(model.metrics).length, `${registry.customMetricKeys?.length || 0} 个界面注册`), stat("注册维度", Object.keys(model.dimensions).length)),
     el("div", { class: "section-heading" }, el("h2", {}, "已注册指标"), el("small", {}, Object.keys(model.metrics).length)),
     el("div", { class: "mapping-grid" }, Object.entries(model.metrics).map(([key, item]) => mappingCard("Metric", key, item))),
@@ -1522,6 +1543,10 @@ async function renderSemantic(token) {
     el("div", { class: "physical-grid" }, (registry.physicalColumns || []).map(physicalFieldCard)),
     el("div", { class: "visible-note governance" }, el("strong", {}, "运行时保证"),
       el("p", {}, "字段标识、聚合方式、指标依赖和别名在注册时完成校验；查询使用参数绑定、白名单维度和 500 行结果上限。界面注册内容保存在本地 SQLite。")));
+  if (query?.get("table")) {
+    history.replaceState(null, "", "#/data/semantic");
+    setTimeout(() => openSemanticModelRegistry({ table: query.get("table"), fromSource: true }), 50);
+  }
 }
 
 function percent(value) {
@@ -1867,7 +1892,7 @@ async function renderRoute() {
     else if (path === "/data/sources") await renderDataSources(token);
     else if ((match = path.match(/^\/data\/sources\/([^/]+)$/))) await renderDataSourceDetail(decodeURIComponent(match[1]), token);
     else if (path === "/data/metrics") await renderMetrics(token);
-    else if (path === "/data/semantic") await renderSemantic(token);
+    else if (path === "/data/semantic") await renderSemantic(query, token);
     else if (path === "/evaluate") await renderEvaluation(token);
     else if (path === "/settings") await renderSettings(token);
     else navigate("/ask");

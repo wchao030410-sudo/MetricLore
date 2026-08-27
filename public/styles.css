@@ -333,6 +333,8 @@ code, pre { font-family: var(--mono); }
 .metric-row:hover { border-color: var(--blue); z-index: 1; }
 .metric-row strong { font-family: var(--display); font-size: 15px; font-weight: 700; }
 .metric-row small { color: var(--muted); }
+.metric-row p { color: var(--muted); font-size: 9px; line-height: 1.5; margin: 0; }
+.metric-model-tag { color: var(--blue); display: block; font-size: 8px; margin-bottom: 3px; }
 .metric-row code { color: var(--blue); font-size: 9px; }
 .mapping-grid { display: grid; gap: 14px; grid-template-columns: repeat(2,minmax(0,1fr)); }
 .mapping-card { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
@@ -348,6 +350,9 @@ code, pre { font-family: var(--mono); }
 .semantic-flow > article code { color: var(--blue); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .semantic-flow > span { align-self: center; color: var(--line-dark); font-size: 22px; }
 .visible-note { background: var(--blue-soft); border-left: 3px solid var(--blue); border-radius: 0 8px 8px 0; margin: 18px 0 24px; padding: 14px 16px; }
+.metric-guide { align-items: center; background: var(--paper); border: 1px dashed var(--line-dark); border-radius: 10px; display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; margin: 4px 0 18px; padding: 16px 18px; }
+.metric-guide strong { font-size: 13px; }
+.metric-guide p { color: var(--muted); font-size: 10px; line-height: 1.55; margin: 4px 0 0; }
 .visible-note.governance { background: #eef6f2; border-left-color: var(--teal); margin-top: 28px; }
 .visible-note strong { font-size: 11px; }
 .visible-note p { color: var(--ink-soft); font-size: 10px; line-height: 1.65; margin: 6px 0 0; }

@@ -240,6 +240,7 @@ export function createAppServer(deps = defaultDeps()) {
         const model = semantic.activateModel(decodeURIComponent(semanticActivate[1]));
         return ok(res, 200, { model, catalog: semantic.catalog(model.id) });
       }
+      if (req.method === "GET" && url.pathname === "/api/semantic/metrics") return ok(res, 200, { metrics: semantic.listAllMetrics() });
       if (req.method === "POST" && url.pathname === "/api/semantic/metrics") {
         const payload = await body(req);
         const metric = semantic.registerMetric(payload, payload.modelId);

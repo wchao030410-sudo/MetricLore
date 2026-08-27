@@ -104,6 +104,15 @@ test("creates multiple semantic models and switches the Agent model", () => {
     assert.equal(reloaded.activeModelId, "regional_commerce");
     assert.equal(reloaded.catalog().metrics.regional_orders.label, "区域订单量");
     assert.equal(reloaded.catalog().registry.models.length, 2);
+
+    // 跨模型指标视图：每条指标带有所属模型
+    const all = reloaded.listAllMetrics();
+    const regional = all.find((item) => item.modelId === "regional_commerce" && item.key === "regional_orders");
+    assert.ok(regional);
+    assert.equal(regional.modelLabel, "区域经营模型");
+    assert.equal(regional.modelActive, true);
+    assert.ok(regional.formula.includes("SUM"));
+    assert.ok(all.some((item) => item.modelId === "commerce_daily" && item.key === "revenue" && item.modelActive === false));
   } finally {
     closeDatabase();
   }
