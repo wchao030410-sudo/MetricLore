@@ -3,39 +3,64 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>MetricLore · Data Intelligence Agent</title>
+  <meta name="description" content="MetricLore — ontology-grounded data agent and LLM Wiki workbench">
+  <title>MetricLore · Agent Workbench</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <aside>
-    <div class="brand"><span>ML</span><div><strong>MetricLore</strong><small>ontology-grounded</small></div></div>
-    <nav>
-      <button class="active" data-page="chat">智能问答</button>
-      <button data-page="trace">Agent Trace</button>
-      <button data-page="metrics">指标目录</button>
-      <button data-page="semantic">语义模型</button>
-      <button data-page="ontology">知识本体</button>
-      <button data-page="wiki">知识库</button>
-    </nav>
-    <div class="status"><i></i><span id="health">正在检查服务…</span></div>
-  </aside>
-  <main>
-    <section id="chat" class="page active">
-      <header><p>Ontology-Grounded Data Agent</p><h1>从指标口径到经营分析</h1><span>让每一次数据回答都有语义、有知识、有证据。</span></header>
-      <div class="suggestions">
-        <button>近14天收入趋势怎么样？</button><button>按地区看订单量</button><button>客单价的口径是什么？</button><button>语义层为什么禁止模型直接拼 SQL？</button>
+  <a class="skip-link" href="#workspace">跳到主内容</a>
+  <header class="mobile-bar">
+    <button id="open-nav" class="icon-button" type="button" aria-label="打开导航">☰</button>
+    <a class="mobile-brand" href="#/ask">MetricLore</a>
+    <button id="open-context" class="icon-button" type="button" aria-label="打开上下文面板">◫</button>
+  </header>
+  <div id="app-shell">
+    <aside id="nav-rail" aria-label="主导航">
+      <a class="brand" href="#/ask" aria-label="MetricLore 首页">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span><strong>MetricLore</strong><small>Agent Workbench</small></span>
+      </a>
+      <button id="new-chat" class="new-chat" type="button"><span>＋</span> New analysis</button>
+      <nav id="primary-nav">
+        <section><small>WORKSPACE</small><a href="#/ask" data-route="/ask"><b>⌁</b><span>Ask</span></a></section>
+        <section>
+          <small>KNOWLEDGE</small>
+          <a href="#/knowledge/builder" data-route="/knowledge/builder"><b>⇧</b><span>Wiki Builder</span></a>
+          <a href="#/knowledge/review" data-route="/knowledge/review"><b>✓</b><span>Review Queue</span><em id="review-count" hidden>0</em></a>
+          <a href="#/knowledge/wiki" data-route="/knowledge/wiki"><b>▤</b><span>Wiki Explorer</span></a>
+          <a href="#/knowledge/ontology" data-route="/knowledge/ontology"><b>◎</b><span>Ontology</span></a>
+        </section>
+        <section>
+          <small>DATA &amp; QUALITY</small>
+          <a href="#/data/metrics" data-route="/data/metrics"><b>∑</b><span>Metrics</span></a>
+          <a href="#/data/semantic" data-route="/data/semantic"><b>⌘</b><span>Semantic Model</span></a>
+          <a href="#/evaluate" data-route="/evaluate"><b>◇</b><span>Evaluate</span></a>
+        </section>
+      </nav>
+      <section class="recent-block">
+        <div class="rail-heading"><small>RECENT THREADS</small><button id="refresh-chats" type="button" aria-label="刷新会话">↻</button></div>
+        <div id="recent-chats" class="recent-chats"><span class="rail-muted">正在读取…</span></div>
+      </section>
+      <div class="rail-footer">
+        <a href="#/settings" data-route="/settings"><b>⚙</b><span>Settings</span></a>
+        <div class="service-state"><i></i><span id="health-label">Local service</span></div>
       </div>
-      <div id="conversation" class="conversation" aria-live="polite">
-        <article class="assistant welcome-message"><div class="avatar">ML</div><div><strong>MetricLore</strong><p>你好。你可以问指标定义、经营数据或趋势分析。所有数据查询都会经过语义层，并实时展示可追溯的公开执行过程。</p></div></article>
-      </div>
-      <form id="chat-form"><textarea id="message" maxlength="4000" placeholder="输入问题，例如：近 30 天收入趋势如何？"></textarea><button type="submit">发送</button></form>
-    </section>
-    <section id="trace" class="page"><header><p>Agent Runtime</p><h1>运行总览</h1><span>问答页中的每条回答都带有实时轨迹；这里保留最近一次运行的完整总览。</span></header><div id="trace-content" class="panel"><p>发起一次问答后，这里会显示其执行轨迹。</p></div><div id="skill-grid" class="grid compact"></div></section>
-    <section id="metrics" class="page"><header><p>Metric Catalog</p><h1>指标目录</h1><span>统一管理名称、口径、类型与格式。</span></header><div id="metric-grid" class="grid"></div></section>
-    <section id="semantic" class="page"><header><p>Semantic Layer</p><h1>语义模型</h1><span>业务概念与物理字段之间的受控映射。</span></header><div id="semantic-content"></div></section>
-    <section id="ontology" class="page"><header><p>LLM Wiki Ontology</p><h1>知识本体</h1><span>指标、业务过程、维度、数据资产、规则和来源之间的可追踪关系。</span></header><div id="ontology-summary" class="panel"></div><div id="ontology-grid" class="grid"></div></section>
-    <section id="wiki" class="page"><header><p>LLM Wiki</p><h1>知识库检索</h1><span>回答附带本地来源，证据不足时不编造。</span></header><form id="wiki-form" class="search"><input id="wiki-query" placeholder="搜索指标口径、语义层或 Agent 边界"><button>搜索</button></form><div id="wiki-results"></div></section>
-  </main>
+    </aside>
+    <div id="stage">
+      <main id="workspace" tabindex="-1" aria-live="polite"><div class="route-loading"><span></span><p>正在打开工作台…</p></div></main>
+      <aside id="context-panel" aria-label="上下文面板">
+        <header class="context-header">
+          <div><small id="context-eyebrow">CONTEXT</small><h2 id="context-title">Workspace</h2></div>
+          <button id="close-context" class="icon-button" type="button" aria-label="关闭上下文面板">×</button>
+        </header>
+        <div id="context-body" class="context-body">
+          <div class="context-empty"><span>⌁</span><h3>上下文会出现在这里</h3><p>选择一条执行轨迹、证据、实体或文件，查看它与当前任务的关系。</p></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+  <button id="screen-overlay" type="button" aria-label="关闭面板"></button>
+  <div id="toast" role="status" aria-live="polite"></div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

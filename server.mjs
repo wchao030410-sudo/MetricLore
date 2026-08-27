@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 
@@ -93,7 +93,7 @@ function defaultDeps() {
 }
 
 export function createAppServer(deps = defaultDeps()) {
-  const { semantic, ontology, skills, wiki, agent, ingestion, conversations } = deps;
+  const { db, semantic, ontology, skills, wiki, agent, ingestion, conversations } = deps;
 
   const streamJobEvents = (req, res, jobId) => {
     const snapshot = ingestion.getJob(jobId);
@@ -166,9 +166,53 @@ export function createAppServer(deps = defaultDeps()) {
       if (req.method === "GET" && url.pathname === "/api/health") {
         return json(res, 200, { status: "ok", database: "sqlite", wikiDocuments: wiki.documents.length, wikiEntities: wiki.entities.size, skills: skills.list().map((item) => item.name), llmConfigured: Boolean(process.env.LLM_API_KEY) });
       }
+      if (req.method === "GET" && url.pathname === "/api/evaluation") {
+        const reportPath = resolve(ROOT, "outputs/evals/latest.json");
+        if (!existsSync(reportPath)) return ok(res, 200, { report: null, command: "npm run eval" });
+        const report = JSON.parse(readFileSync(reportPath, "utf8"));
+        const groups = {};
+        for (const result of report.results || []) {
+          const group = groups[result.group] ||= { total: 0, passed: 0 };
+          group.total += 1;
+          if (result.pass) group.passed += 1;
+        }
+        return ok(res, 200, { report: { generatedAt: report.generatedAt, caseCount: report.caseCount, repeatedRuns: report.repeatedRuns, passed: report.passed, failed: report.failed, passRate: report.passRate, consistencyRate: report.consistencyRate, groups } });
+      }
       if (req.method === "GET" && url.pathname === "/api/catalog") return json(res, 200, semantic.catalog());
       if (req.method === "GET" && url.pathname === "/api/skills") return json(res, 200, { skills: skills.list() });
       if (req.method === "GET" && url.pathname === "/api/ontology") return json(res, 200, { schema: ontology.schema, entities: [...wiki.entities.values()].map((entity) => wiki.publicEntity(entity)) });
+      if (req.method === "GET" && url.pathname === "/api/wiki/pages") {
+        const result = wiki.pages({
+          query: url.searchParams.get("q") || "",
+          entityTypes: url.searchParams.getAll("type"),
+          statuses: url.searchParams.getAll("status"),
+          limit: url.searchParams.get("limit") || 50,
+          cursor: url.searchParams.get("cursor") || 0,
+        });
+        return ok(res, 200, { pages: result.items, total: result.total, nextCursor: result.nextCursor });
+      }
+      if (req.method === "GET" && url.pathname === "/api/wiki/graph") {
+        const graph = wiki.graph({
+          focusKey: url.searchParams.get("focus") || undefined,
+          depth: url.searchParams.get("depth") || 2,
+          entityTypes: url.searchParams.getAll("type"),
+          relationTypes: url.searchParams.getAll("relation"),
+          statuses: url.searchParams.getAll("status"),
+        });
+        return ok(res, 200, { graph });
+      }
+      const wikiPageSource = url.pathname.match(/^\/api\/wiki\/pages\/([^/]+)\/source$/);
+      const wikiPageDetail = url.pathname.match(/^\/api\/wiki\/pages\/([^/]+)$/);
+      if (req.method === "GET" && wikiPageSource) {
+        const source = wiki.source(decodeURIComponent(wikiPageSource[1]), url.searchParams.get("index") || 0);
+        return ok(res, 200, { source });
+      }
+      if (req.method === "GET" && wikiPageDetail) {
+        const page = wiki.page(decodeURIComponent(wikiPageDetail[1]));
+        const versions = page.entityKey ? db.prepare("SELECT version, action, path, published_at FROM wiki_versions WHERE entity_key = ? ORDER BY version DESC LIMIT 20").all(page.entityKey)
+          .map((row) => ({ version: row.version, action: row.action, path: row.path, publishedAt: row.published_at })) : [];
+        return ok(res, 200, { page: { ...page, versions } });
+      }
       if (req.method === "GET" && url.pathname.startsWith("/api/wiki/entity/")) return json(res, 200, { entity: wiki.entity(decodeURIComponent(url.pathname.slice("/api/wiki/entity/".length))) });
       if (req.method === "GET" && url.pathname.startsWith("/api/wiki/trace/")) return json(res, 200, { paths: wiki.trace(decodeURIComponent(url.pathname.slice("/api/wiki/trace/".length)), [], Number(url.searchParams.get("depth") || 2)) });
       if (req.method === "GET" && url.pathname === "/api/wiki/search") {
@@ -277,6 +321,18 @@ export function createAppServer(deps = defaultDeps()) {
       if (req.method === "GET" && url.pathname === "/api/knowledge/jobs") {
         const { items, nextCursor } = ingestion.listJobs({ status: url.searchParams.get("status") || undefined, limit: url.searchParams.get("limit") || undefined, cursor: url.searchParams.get("cursor") || undefined });
         return ok(res, 200, { jobs: items, nextCursor });
+      }
+      if (req.method === "GET" && url.pathname === "/api/knowledge/candidates") {
+        const { items, nextCursor } = ingestion.listCandidates({
+          jobId: url.searchParams.get("jobId") || undefined,
+          status: url.searchParams.get("status") || undefined,
+          type: url.searchParams.get("type") || undefined,
+          hasConflict: url.searchParams.get("hasConflict") === "true" || undefined,
+          hasValidationErrors: url.searchParams.get("hasValidationErrors") === "true" || undefined,
+          limit: url.searchParams.get("limit") || undefined,
+          cursor: url.searchParams.get("cursor") || undefined,
+        });
+        return ok(res, 200, { candidates: items, nextCursor });
       }
       if (req.method === "GET" && jobEvents) {
         const jobId = decodeURIComponent(jobEvents[1]);
