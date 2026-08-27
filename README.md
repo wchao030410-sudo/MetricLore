@@ -137,20 +137,27 @@ npm ci
 npm start
 ```
 
-打开 <http://127.0.0.1:3000>。首次启动自动创建本地数据库并载入 90 天电商合成数据，随后可以直接体验：
+打开 <http://127.0.0.1:3000>。首次启动自动创建本地数据库并载入 90 天电商合成数据。
+
+> **配不配模型 Key 的区别**：不配置也能完整运行，但会以**确定性模式**工作（问数、口径、分析都可用）；配置模型 Key 后启用 **LLM 模式**——模型负责理解问题与组织回答，LLM-as-a-Judge 评测和 LLM 辅助知识抽取也依赖它。建议先配好再体验。
+
+**配置你自己的模型 Key**（支持任意 OpenAI 兼容端点，编辑 `.env` 后重启 `npm start`）：
+
+```bash
+# 以 DeepSeek 为例：
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_API_KEY=sk-你的密钥
+LLM_MODEL=deepseek-v4-flash
+```
+
+配置成功后，页面左下角会显示 "LLM" 模式。
+
+随后可以直接体验：
 
 1. **接入自己的数据**：在「数据」页点击「体验示例数据」（或上传自己的 CSV/Excel）→ 预览并确认列类型 → 创建数据表 → 在数据源详情「基于此表创建语义模型」→ 注册第一个指标 → 回到「智能问答」提问，AI 会自动选择你的模型作答。
 2. **体验一条多轮分析**：在「智能问答」依次发送 `近 14 天收入怎么样？` → `那按地区拆一下。` → `华东为什么变化？` → `这个指标口径是什么？`，观察上下文继承与消息级执行轨迹。
 3. **构建自己的知识库**：在「知识构建」上传文档（仓库提供 [`examples/wiki-builder/ecommerce-growth`](examples/wiki-builder/ecommerce-growth) 与 [`subscription-saas`](examples/wiki-builder/subscription-saas) 两套示例），在「审核队列」批准候选并发布，回到「智能问答」用新知识继续提问。
 4. **跑一次质量评测**：在「评测」页点击「开始评测」，查看五套件指标（含针对你当前模型的数据准确率）、运行历史与版本快照。
-
-可选：在 `.env` 配置 OpenAI-compatible 模型后，Agent 启用函数调用循环；未配置时确定性路径完整可用。
-
-```bash
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_API_KEY=your_api_key
-LLM_MODEL=gpt-4.1-mini
-```
 
 完整接口与 SSE 事件契约见 [`docs/v0.2/API_AND_EVENTS.md`](docs/v0.2/API_AND_EVENTS.md)。
 
