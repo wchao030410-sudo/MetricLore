@@ -101,8 +101,42 @@ test("HTTP workbench endpoints serve wiki pages, graph, candidates and evaluatio
     assert.equal(candidates.schemaVersion, "0.2");
     assert.ok(Array.isArray(candidates.data.candidates));
 
+    const registration = await fetch(`${base}/api/semantic/metrics`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        key: "revenue_per_visitor", label: "收入访客价值", description: "支付成功收入除以同期访客数",
+        type: "derived", numerator: "revenue", denominator: "visitors", scale: 1, format: "currency", aliases: ["单访价值"],
+      }),
+    });
+    assert.equal(registration.status, 201);
+    const registered = await registration.json();
+    assert.equal(registered.data.metric.source, "custom");
+    assert.equal(registered.data.catalog.metrics.revenue_per_visitor.label, "收入访客价值");
+
+    const query = await fetch(`${base}/api/query`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ metrics: ["revenue_per_visitor"] }),
+    });
+    const queryPayload = await query.json();
+    assert.ok(queryPayload.rows[0].revenue_per_visitor > 0);
+
+    const answer = await fetch(`${base}/api/chat`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "收入访客价值的口径是什么？" }),
+    });
+    const answerPayload = await answer.json();
+    assert.equal(answerPayload.status, "verified");
+    assert.match(answerPayload.answer, /支付成功收入除以同期访客数/);
+    assert.match(answerPayload.answer, /当前语义模型注册表/);
+
     const evaluation = await (await fetch(`${base}/api/evaluation`)).json();
     assert.ok(evaluation.data.report === null || typeof evaluation.data.report === "object");
+    if (evaluation.data.report) {
+      assert.ok("singleTurn" in evaluation.data.report);
+      assert.ok("multiTurn" in evaluation.data.report);
+      assert.ok("wiki" in evaluation.data.report);
+    }
   } finally {
     server.close();
     closeDatabase();
@@ -114,4 +148,16 @@ test("responsive context drawer stays scoped to Ask routes", () => {
   assert.match(source, /classList\.contains\("has-context"\).*matchMedia/s);
   assert.match(source, /\$\("#open-context"\)\.hidden = !isAsk/);
   assert.match(source, /head\.addEventListener\("keydown"/);
+});
+
+test("workbench exposes primary actions and keeps tall pages scrollable", () => {
+  const source = readFileSync(resolve(import.meta.dirname, "../public/app.js"), "utf8");
+  const styles = readFileSync(resolve(import.meta.dirname, "../public/styles.css"), "utf8");
+  assert.match(source, /action\("＋ 注册指标"/);
+  assert.match(source, /api\/semantic\/metrics/);
+  assert.match(source, /canReview \? "审核" : "查看"/);
+  assert.match(source, /先核对原文，再决定是否发布/);
+  assert.match(source, /上下文准确率/);
+  assert.match(styles, /#stage[^}]*min-height:\s*0/);
+  assert.match(styles, /#workspace[^}]*min-height:\s*0[^}]*overflow:\s*auto/);
 });

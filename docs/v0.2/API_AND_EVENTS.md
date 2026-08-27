@@ -301,7 +301,56 @@ Query：`focus`、`depth`、可重复的 `type`、`relation` 和 `status`。默�
 
 现有 `/api/wiki/search`、`/api/wiki/entity/:key` 和 `/api/wiki/trace/:key` 在 v0.2 保留。
 
-## 7. 安全与隐私
+## 7. Semantic Registry API
+
+### GET /api/catalog
+
+返回当前语义模型、事实表、基础指标、界面注册指标、维度、时间粒度和物理字段目录。`registry.writable` 表示当前实例是否允许界面注册，`registry.customMetricKeys` 列出 SQLite 中的自定义指标。
+
+### POST /api/semantic/metrics
+
+注册原子指标：
+
+```json
+{
+  "key":"refund_amount",
+  "label":"退款金额",
+  "description":"审核通过并完成原路退回的金额",
+  "type":"atomic",
+  "column":"refund_amount",
+  "aggregation":"SUM",
+  "format":"currency",
+  "aliases":["退款额"]
+}
+```
+
+注册派生指标：
+
+```json
+{
+  "key":"revenue_per_visitor",
+  "label":"收入访客价值",
+  "description":"支付成功收入除以同期访客数",
+  "type":"derived",
+  "numerator":"revenue",
+  "denominator":"visitors",
+  "scale":1,
+  "format":"currency",
+  "aliases":["单访价值","RPV"]
+}
+```
+
+Response `201` 返回新指标和更新后的完整目录。服务端校验 key、名称与别名冲突、物理字段存在性、数值类型、聚合方式、指标依赖和缩放系数。注册成功后，指标立即用于语义查询、Agent 路由和口径问答，并在重启后从 SQLite 恢复。
+
+## 8. Evaluation API
+
+### GET /api/evaluation
+
+读取 `outputs/evals/` 中最近生成的单轮、多轮和 Wiki Builder 报告，返回三个独立分组。未生成报告时返回 `report: null` 和完整重跑命令 `npm run verify`。
+
+多轮报告包含 `contextCheckCount`、`passedContextChecks`、`contextAccuracy`、`isolatedScenarios` 和 `isolationRate`，分别对应上下文组件准确率与会话隔离率。
+
+## 9. 安全与隐私
 
 - 上传文件先做扩展名、MIME、大小、路径和压缩包检查。
 - 原始文件名保存为相对路径，服务器生成实际存储名。
@@ -311,7 +360,7 @@ Query：`focus`、`depth`、可重复的 `type`、`relation` 和 `status`。默�
 - API 响应和 SSE 只返回来源片段，不返回整份私有文件。
 - 模型密钥保留在服务端环境变量。
 
-## 8. 兼容与测试
+## 10. 兼容与测试
 
 - 现有 `/api/chat` 保留为无状态单轮兼容接口；持久化多轮使用 Conversation API。
 - 现有 `/api/query` 保持语义查询契约。

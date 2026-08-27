@@ -40,19 +40,27 @@ try {
       const response = await conversations.submitMessage(conversation.id, turn.question);
       const tools = response.run.toolCalls.map((call) => call.toolName);
       const context = response.run.contextAfter || {};
+      const contextChecks = {
+        metrics: same(context.metrics || [], turn.expected.context.metrics),
+        dimensions: same(context.dimensions || [], turn.expected.context.dimensions),
+        filters: same(context.filters || {}, turn.expected.context.filters),
+        range: rangeDays(context.timeRange) === turn.expected.context.rangeDays,
+      };
       const failures = [];
       if (response.run.capability !== turn.expected.capability) failures.push(`capability expected ${turn.expected.capability}, got ${response.run.capability}`);
       if (response.run.plan?.skill !== turn.expected.skill) failures.push(`skill expected ${turn.expected.skill}, got ${response.run.plan?.skill}`);
       for (const required of turn.expected.tools) if (!tools.includes(required)) failures.push(`missing tool ${required}`);
-      if (!same(context.metrics || [], turn.expected.context.metrics)) failures.push(`metrics expected ${JSON.stringify(turn.expected.context.metrics)}, got ${JSON.stringify(context.metrics || [])}`);
-      if (!same(context.dimensions || [], turn.expected.context.dimensions)) failures.push(`dimensions expected ${JSON.stringify(turn.expected.context.dimensions)}, got ${JSON.stringify(context.dimensions || [])}`);
-      if (!same(context.filters || {}, turn.expected.context.filters)) failures.push(`filters expected ${JSON.stringify(turn.expected.context.filters)}, got ${JSON.stringify(context.filters || {})}`);
-      if (rangeDays(context.timeRange) !== turn.expected.context.rangeDays) failures.push(`range expected ${turn.expected.context.rangeDays} days, got ${rangeDays(context.timeRange)}`);
+      if (!contextChecks.metrics) failures.push(`metrics expected ${JSON.stringify(turn.expected.context.metrics)}, got ${JSON.stringify(context.metrics || [])}`);
+      if (!contextChecks.dimensions) failures.push(`dimensions expected ${JSON.stringify(turn.expected.context.dimensions)}, got ${JSON.stringify(context.dimensions || [])}`);
+      if (!contextChecks.filters) failures.push(`filters expected ${JSON.stringify(turn.expected.context.filters)}, got ${JSON.stringify(context.filters || {})}`);
+      if (!contextChecks.range) failures.push(`range expected ${turn.expected.context.rangeDays} days, got ${rangeDays(context.timeRange)}`);
       if (!response.run.events.some((event) => event.type === "run.completed")) failures.push("missing terminal run.completed event");
       if (!response.run.evidence.length) failures.push("missing evidence");
-      turns.push({ index: index + 1, question: turn.question, pass: failures.length === 0, failures, capability: response.run.capability, skill: response.run.plan?.skill, tools, context });
+      turns.push({ index: index + 1, question: turn.question, pass: failures.length === 0, failures, capability: response.run.capability, skill: response.run.plan?.skill, tools, context, contextChecks, contextBefore: response.run.contextBefore });
     }
-    results.push({ id: scenario.id, title: scenario.title, pass: turns.every((turn) => turn.pass), turns });
+    const firstBefore = turns[0]?.contextBefore || {};
+    const isolated = !(firstBefore.metrics || []).length && !(firstBefore.dimensions || []).length && !firstBefore.timeRange && !Object.keys(firstBefore.filters || {}).length;
+    results.push({ id: scenario.id, title: scenario.title, pass: turns.every((turn) => turn.pass), isolated, turns });
   }
 } finally {
   closeDatabase();
@@ -63,6 +71,8 @@ const scenarioCount = results.length;
 const turnCount = results.reduce((sum, item) => sum + item.turns.length, 0);
 const passedScenarios = results.filter((item) => item.pass).length;
 const passedTurns = results.flatMap((item) => item.turns).filter((item) => item.pass).length;
+const contextChecks = results.flatMap((item) => item.turns).flatMap((turn) => Object.values(turn.contextChecks));
+const isolatedScenarios = results.filter((item) => item.isolated).length;
 const report = {
   generatedAt: new Date().toISOString(),
   scenarioCount,
@@ -70,12 +80,15 @@ const report = {
   passedScenarios,
   failedScenarios: scenarioCount - passedScenarios,
   passedTurns,
-  contextAccuracy: passedTurns / turnCount,
-  isolationRate: 1,
+  turnPassRate: passedTurns / turnCount,
+  contextCheckCount: contextChecks.length,
+  passedContextChecks: contextChecks.filter(Boolean).length,
+  contextAccuracy: contextChecks.filter(Boolean).length / contextChecks.length,
+  isolatedScenarios,
+  isolationRate: isolatedScenarios / scenarioCount,
   results,
 };
 mkdirSync(resolve(ROOT, "outputs/evals"), { recursive: true });
 writeFileSync(resolve(ROOT, "outputs/evals/multi-turn-latest.json"), JSON.stringify(report, null, 2));
 console.log(JSON.stringify({ scenarioCount, turnCount, passedScenarios, failedScenarios: report.failedScenarios, contextAccuracy: report.contextAccuracy, isolationRate: report.isolationRate, output: "outputs/evals/multi-turn-latest.json" }, null, 2));
 if (report.failedScenarios) process.exitCode = 1;
-

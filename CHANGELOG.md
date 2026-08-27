@@ -2,6 +2,20 @@
 
 本文件记录 MetricLore 的公开版本变化，格式参考 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)。
 
+## [Unreleased]
+
+### Added
+
+- 语义模型页面支持注册原子指标与派生指标，自定义口径持久化到 SQLite，并立即用于 Agent 查询与口径问答。
+- 评测页面同时读取单轮、多轮和 Wiki Builder 报告，展示计算公式、样本规模和评测边界。
+- 审核队列增加逐行审核入口、当前结果全选、队列统计和可见的审核发布说明。
+
+### Changed
+
+- 语义模型页面改为模型、事实表、指标/维度和物理字段的完整映射视图，并修复长页面滚动。
+- 多轮评测按指标、维度、筛选和时间范围分别计算上下文准确率，并从实际首轮上下文计算会话隔离率。
+- 候选审核详情在主页面展示自动校验、冲突和抽取方式，减少隐藏操作与信息。
+
 ## [0.2.0] - 2026-08-27
 
 ### Added
@@ -37,4 +51,3 @@
 
 [0.2.0]: https://github.com/wchao030410-sudo/MetricLore/releases/tag/v0.2.0
 [0.1.0]: https://github.com/wchao030410-sudo/MetricLore/commits/main
-

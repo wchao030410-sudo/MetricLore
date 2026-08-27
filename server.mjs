@@ -82,7 +82,7 @@ function defaultDeps() {
   loadEnv();
   const db = openDatabase();
   runMigrations(db);
-  const semantic = new SemanticLayer();
+  const semantic = new SemanticLayer(undefined, db);
   const ontology = new Ontology();
   const skills = new SkillRegistry();
   const wiki = new WikiIndex(undefined, ontology);
@@ -94,6 +94,7 @@ function defaultDeps() {
 
 export function createAppServer(deps = defaultDeps()) {
   const { db, semantic, ontology, skills, wiki, agent, ingestion, conversations } = deps;
+  semantic.attachDatabase?.(db);
 
   const streamJobEvents = (req, res, jobId) => {
     const snapshot = ingestion.getJob(jobId);
@@ -167,18 +168,39 @@ export function createAppServer(deps = defaultDeps()) {
         return json(res, 200, { status: "ok", database: "sqlite", wikiDocuments: wiki.documents.length, wikiEntities: wiki.entities.size, skills: skills.list().map((item) => item.name), llmConfigured: Boolean(process.env.LLM_API_KEY) });
       }
       if (req.method === "GET" && url.pathname === "/api/evaluation") {
-        const reportPath = resolve(ROOT, "outputs/evals/latest.json");
-        if (!existsSync(reportPath)) return ok(res, 200, { report: null, command: "npm run eval" });
-        const report = JSON.parse(readFileSync(reportPath, "utf8"));
+        const readReport = (file) => {
+          const path = resolve(ROOT, `outputs/evals/${file}`);
+          return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+        };
+        const single = readReport("latest.json");
+        const multi = readReport("multi-turn-latest.json");
+        const wikiEval = readReport("wiki-latest.json");
+        if (!single && !multi && !wikiEval) return ok(res, 200, { report: null, command: "npm run verify" });
         const groups = {};
-        for (const result of report.results || []) {
+        for (const result of single?.results || []) {
           const group = groups[result.group] ||= { total: 0, passed: 0 };
           group.total += 1;
           if (result.pass) group.passed += 1;
         }
-        return ok(res, 200, { report: { generatedAt: report.generatedAt, caseCount: report.caseCount, repeatedRuns: report.repeatedRuns, passed: report.passed, failed: report.failed, passRate: report.passRate, consistencyRate: report.consistencyRate, groups } });
+        const generatedAt = [single?.generatedAt, multi?.generatedAt, wikiEval?.generatedAt].filter(Boolean).sort().at(-1) || null;
+        return ok(res, 200, { report: {
+          generatedAt,
+          singleTurn: single ? { caseCount: single.caseCount, repeatedRuns: single.repeatedRuns, passed: single.passed, failed: single.failed, passRate: single.passRate, consistencyRate: single.consistencyRate, groups } : null,
+          multiTurn: multi ? {
+            scenarioCount: multi.scenarioCount, turnCount: multi.turnCount,
+            passedScenarios: multi.passedScenarios, failedScenarios: multi.failedScenarios,
+            passedTurns: multi.passedTurns, turnPassRate: multi.turnPassRate ?? (multi.passedTurns / multi.turnCount),
+            contextCheckCount: multi.contextCheckCount, passedContextChecks: multi.passedContextChecks,
+            contextAccuracy: multi.contextAccuracy, isolatedScenarios: multi.isolatedScenarios, isolationRate: multi.isolationRate,
+          } : null,
+          wiki: wikiEval ? { checkCount: wikiEval.checkCount, passed: wikiEval.passed, failed: wikiEval.failed, passRate: wikiEval.checkCount ? wikiEval.passed / wikiEval.checkCount : 0 } : null,
+        } });
       }
       if (req.method === "GET" && url.pathname === "/api/catalog") return json(res, 200, semantic.catalog());
+      if (req.method === "POST" && url.pathname === "/api/semantic/metrics") {
+        const metric = semantic.registerMetric(await body(req));
+        return ok(res, 201, { metric, catalog: semantic.catalog() });
+      }
       if (req.method === "GET" && url.pathname === "/api/skills") return json(res, 200, { skills: skills.list() });
       if (req.method === "GET" && url.pathname === "/api/ontology") return json(res, 200, { schema: ontology.schema, entities: [...wiki.entities.values()].map((entity) => wiki.publicEntity(entity)) });
       if (req.method === "GET" && url.pathname === "/api/wiki/pages") {

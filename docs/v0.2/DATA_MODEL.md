@@ -12,6 +12,7 @@ SQLite 保存运行状态；Markdown 保存已发布 Wiki 正文。
 | 已发布 Wiki 页面 | `wiki/**/*.md` |
 | Wiki 版本与发布记录 | SQLite，引用 Markdown 内容哈希 |
 | FTS 与图谱索引 | SQLite/内存索引，由 Markdown 发布事件刷新 |
+| 界面注册的语义指标 | SQLite，启动时与基础语义模型合并 |
 | 原始上传文件 | 本地工作目录，默认不进入 Git |
 
 ## 2. 通用约定
@@ -23,7 +24,22 @@ SQLite 保存运行状态；Markdown 保存已发布 Wiki 正文。
 - 并发：候选实体使用 `revision` 乐观锁。
 - 外键：启动后执行 `PRAGMA foreign_keys = ON`。
 
-## 3. 会话与 Agent Run
+## 3. 语义指标注册
+
+### semantic_metrics
+
+基础指标和维度继续由 `config/semantic-model.json` 管理；用户在工作台新增的指标写入本表，并在启动时合并到运行时语义目录。
+
+| 字段 | 类型 | 约束 |
+| --- | --- | --- |
+| key | TEXT | PK，小写 snake_case |
+| definition_json | TEXT | 指标名称、定义、类型、字段或依赖、聚合、格式和别名 |
+| created_at | TEXT | 非空 |
+| updated_at | TEXT | 非空 |
+
+注册在单次写入前完成物理字段、数值类型、别名冲突和派生依赖校验。当前派生指标采用两个已注册原子指标相除，并支持缩放系数。
+
+## 4. 会话与 Agent Run
 
 ### idempotency_keys
 
@@ -161,7 +177,7 @@ queued/planning/running/validating → failed | cancelled
 {"schemaVersion":"0.2","page":12,"section":"客单价","startLine":44,"endLine":48}
 ```
 
-## 4. Wiki Builder
+## 5. Wiki Builder
 
 ### ingestion_jobs
 
@@ -306,7 +322,7 @@ Decision：`approve/reject/merge/request_changes`。记录不可更新。
 
 唯一索引：`entity_key, version`。
 
-## 5. 状态与事务
+## 6. 状态与事务
 
 - 一个文件的 parse/chunk 写入在单事务内完成。
 - 候选批量生成以文件为事务边界，单文件失败不回滚其他文件。
@@ -315,7 +331,7 @@ Decision：`approve/reject/merge/request_changes`。记录不可更新。
 - SSE 事件与业务状态写入同一事务，避免 UI 收到未提交状态。
 - `wiki_publications` 先以 `publishing` 写入；全部 Markdown 原子替换、版本记录和索引刷新成功后才转为 `completed`。
 
-## 6. 迁移策略
+## 7. 迁移策略
 
 1. 新增 `schema_migrations(version, name, applied_at, checksum)`。
 2. 迁移文件使用递增编号并在事务内执行。

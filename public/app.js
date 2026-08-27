@@ -920,10 +920,12 @@ async function renderReviewQueue(query, token) {
         el("option", { value: "" }, "全部状态"), ["extracted", "needs_review", "approved", "rejected", "merged", "published"].map((status) => el("option", { value: status }, statusText(status))))),
       el("label", { class: "field" }, el("span", {}, "冲突"), el("select", { id: "candidate-conflict" }, el("option", { value: "" }, "不限"), el("option", { value: "yes" }, "仅冲突"))));
     const tableHost = el("div");
-    const batch = el("div", { class: "batch-bar" }, el("span", { id: "selection-label" }, "已选 0 条"),
+    const approveSelected = action("批准所选", "button primary", () => batchReviewCandidates(candidates, "approve"), { disabled: true });
+    const rejectSelected = action("驳回所选", "button danger", () => batchReviewCandidates(candidates, "reject"), { disabled: true });
+    const batch = el("div", { class: "batch-bar" }, el("span", { id: "selection-label" }, "已选 0 条可审核候选"),
       el("div", { class: "batch-actions" },
-        action("批准", "button primary", () => batchReviewCandidates(candidates, "approve")),
-        action("驳回", "button danger", () => batchReviewCandidates(candidates, "reject")),
+        approveSelected,
+        rejectSelected,
         action("发布已批准", "button amber", async () => {
           const currentJob = $("#candidate-job").value;
           if (!currentJob) { toast("发布前请先选择一个任务"); return; }
@@ -936,13 +938,30 @@ async function renderReviewQueue(query, token) {
       const conflictOnly = $("#candidate-conflict").value === "yes";
       const visible = candidates.filter((candidate) => (!search || `${candidate.title} ${candidate.entityKey} ${candidate.sourcePath}`.toLowerCase().includes(search))
         && (!type || candidate.entityType === type) && (!status || candidate.status === status) && (!conflictOnly || candidate.conflict));
+      const actionable = visible.filter((candidate) => ["extracted", "needs_review"].includes(candidate.status));
+      const selectedActionable = actionable.filter((candidate) => state.selectedCandidates.has(candidate.id));
+      const selectAll = el("input", {
+        type: "checkbox", checked: actionable.length > 0 && selectedActionable.length === actionable.length,
+        disabled: !actionable.length, "aria-label": "选择当前结果中的全部待审核候选",
+      });
+      selectAll.indeterminate = selectedActionable.length > 0 && selectedActionable.length < actionable.length;
+      selectAll.addEventListener("change", () => {
+        actionable.forEach((candidate) => selectAll.checked
+          ? state.selectedCandidates.add(candidate.id)
+          : state.selectedCandidates.delete(candidate.id));
+        draw();
+      });
       const table = el("div", { class: "table-panel" }, el("table", { class: "work-table" },
-        el("thead", {}, el("tr", {}, ["", "候选", "类型", "来源", "状态", "校验"].map((item) => el("th", {}, item)))),
+        el("thead", {}, el("tr", {}, el("th", {}, selectAll), ["候选", "类型", "来源", "状态", "校验", "操作"].map((item) => el("th", {}, item)))),
         el("tbody", {}, visible.map((candidate) => {
-          const checkbox = el("input", { type: "checkbox", checked: state.selectedCandidates.has(candidate.id), "aria-label": `选择 ${candidate.title}` });
+          const canReview = ["extracted", "needs_review"].includes(candidate.status);
+          const checkbox = el("input", {
+            type: "checkbox", checked: state.selectedCandidates.has(candidate.id), disabled: !canReview,
+            "aria-label": canReview ? `选择 ${candidate.title}` : `${candidate.title} 当前不可批量审核`,
+          });
           checkbox.addEventListener("change", () => {
             if (checkbox.checked) state.selectedCandidates.add(candidate.id); else state.selectedCandidates.delete(candidate.id);
-            $("#selection-label").textContent = `已选 ${state.selectedCandidates.size} 条`;
+            draw();
           });
           return el("tr", {}, el("td", {}, checkbox),
             el("td", {}, el("button", { class: "row-link", type: "button", onClick: () => navigate(`/knowledge/review/${encodeURIComponent(candidate.id)}`) },
@@ -951,22 +970,33 @@ async function renderReviewQueue(query, token) {
             el("td", {}, candidate.entityType), el("td", {}, candidate.sourcePath || "—"),
             el("td", {}, statusPill(candidate.status)),
             el("td", {}, candidate.validation?.valid && !candidate.relationErrors?.length ? "通过" :
-              el("ul", { class: "issue-list" }, [...(candidate.validation?.errors || []), ...(candidate.relationErrors || [])].slice(0, 3).map((issue) => el("li", {}, typeof issue === "string" ? issue : issue.message || JSON.stringify(issue))))));
+              el("ul", { class: "issue-list" }, [...(candidate.validation?.errors || []), ...(candidate.relationErrors || [])].slice(0, 3).map((issue) => el("li", {}, typeof issue === "string" ? issue : issue.message || JSON.stringify(issue))))),
+            el("td", {}, action(canReview ? "审核" : "查看", canReview ? "button primary row-action" : "button secondary row-action",
+              () => navigate(`/knowledge/review/${encodeURIComponent(candidate.id)}`), { "aria-label": `${canReview ? "审核" : "查看"}候选 ${candidate.title || "未命名"}` })));
         }))));
+      const selectedCount = state.selectedCandidates.size;
+      $("#selection-label").textContent = `已选 ${selectedCount} 条可审核候选`;
+      approveSelected.disabled = selectedCount === 0;
+      rejectSelected.disabled = selectedCount === 0;
       tableHost.replaceChildren(visible.length ? table : emptyState("没有匹配的候选", "调整筛选条件，或先在知识构建创建一个导入任务。", "✓"));
     };
-    toolbar.addEventListener("input", draw);
+    toolbar.addEventListener("input", () => { state.selectedCandidates.clear(); draw(); });
     $("#candidate-job", toolbar).addEventListener("change", (event) => {
       navigate(`/knowledge/review${event.target.value ? `?job=${encodeURIComponent(event.target.value)}` : ""}`);
     });
+    const pendingCount = candidates.filter((item) => ["extracted", "needs_review"].includes(item.status)).length;
+    const conflictCount = candidates.filter((item) => item.conflict).length;
+    const approvedCount = candidates.filter((item) => item.status === "approved").length;
+    const guide = el("section", { class: "review-guide" },
+      el("div", {}, el("small", { class: "eyebrow" }, "审核流程"), el("h2", {}, "先核对原文，再决定是否发布"),
+        el("p", {}, "点击每行的“审核”查看来源、抽取结果和校验问题；确定无误的候选也可以勾选后批量批准。已批准内容需要按任务发布，才会进入 Wiki 和问答索引。")),
+      el("div", { class: "review-counts", "aria-label": "审核队列概览" },
+        el("span", {}, el("strong", {}, pendingCount), "待审核"),
+        el("span", {}, el("strong", {}, conflictCount), "有冲突"),
+        el("span", {}, el("strong", {}, approvedCount), "已批准")));
     shell.replaceChildren(pageHeader("人工审核", "审核队列", "每个候选都保留来源、抽取方式、校验问题与冲突信息。"),
-      toolbar, batch, tableHost);
+      guide, toolbar, batch, tableHost);
     draw();
-    openContext({
-      eyebrow: "审核关卡", title: "为什么要审核？",
-      content: [section("发布策略", el("p", {}, "只有已批准候选可以进入发布流程。发布后会写入知识库文件、版本记录并热更新 FTS 与图谱索引。")),
-        section("当前队列", contextList([`${candidates.length} 条候选`, `${candidates.filter((item) => item.conflict).length} 条冲突`, `${candidates.filter((item) => item.status === "approved").length} 条已批准`]))],
-    });
   } catch (error) {
     if (token === state.viewToken) shell.replaceChildren(errorState(error));
   }
@@ -1008,21 +1038,21 @@ async function renderCandidate(candidateId, token) {
         candidate.conflict ? action("合并", "button amber", () => reviewOne(candidate, "merge", $("#merge-target", editor).value.trim())) : null,
         action("驳回", "button danger", () => reviewOne(candidate, "reject"))));
     editor.addEventListener("submit", (event) => event.preventDefault());
+    const validationItems = [...(candidate.validation?.errors || []), ...(candidate.relationErrors || [])]
+      .map((item) => typeof item === "string" ? item : item.message || JSON.stringify(item));
+    const reviewSummary = el("section", { class: "review-summary" },
+      el("article", {}, el("small", {}, "当前状态"), statusPill(candidate.status)),
+      el("article", {}, el("small", {}, "自动校验"), el("strong", {}, validationItems.length ? `${validationItems.length} 项待确认` : "全部通过")),
+      el("article", {}, el("small", {}, "冲突检测"), el("strong", {}, candidate.conflict ? `${candidate.conflict.type} · 需要处理` : "未发现冲突")),
+      el("article", {}, el("small", {}, "抽取方式"), el("strong", {}, candidate.extraction?.method || "rules")),
+      validationItems.length ? el("div", { class: "review-issues" }, el("strong", {}, "需要关注"),
+        el("ul", { class: "issue-list" }, validationItems.map((item) => el("li", {}, item)))) : null);
     shell.replaceChildren(pageHeader("候选审核", candidate.title || "未命名候选", `${candidate.sourcePath || "未知来源"} · revision ${candidate.revision}`,
       [action("返回队列", "button secondary", () => navigate(`/knowledge/review?job=${encodeURIComponent(candidate.jobId)}`))]),
+      reviewSummary,
       el("div", { class: "split-grid" },
         el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "来源预览"), el("small", {}, candidate.sourcePath || "")), source),
         el("section", {}, el("div", { class: "section-heading" }, el("h2", {}, "候选编辑器"), statusPill(candidate.status)), editor)));
-    openContext({
-      eyebrow: "校验", title: candidate.validation?.valid ? "通过" : "需要关注",
-      content: [
-        section("抽取", contextList([`方法：${candidate.extraction?.method || "rules"}`, `版本：${candidate.revision}`, `来源：${candidate.sourcePath || "—"}`])),
-        candidate.conflict ? section("冲突", el("p", {}, `${candidate.conflict.type} · ${candidate.conflict.existing?.title || candidate.conflict.existing?.key}`)) : section("冲突", el("p", {}, "未检测到重复或受保护页面冲突。")),
-        section("校验信息", contextList([...(candidate.validation?.errors || []), ...(candidate.relationErrors || [])].map((item) => typeof item === "string" ? item : item.message || JSON.stringify(item)).length
-          ? [...(candidate.validation?.errors || []), ...(candidate.relationErrors || [])].map((item) => typeof item === "string" ? item : item.message || JSON.stringify(item))
-          : ["当前所有检查均已通过"])),
-      ],
-    });
   } catch (error) {
     if (token === state.viewToken) shell.replaceChildren(errorState(error));
   }
@@ -1297,10 +1327,86 @@ async function renderMetrics(token) {
 
 function mappingCard(kind, key, item) {
   const values = kind === "Metric"
-    ? { key, type: item.type, mapping: item.type === "atomic" ? `${item.aggregation}(${item.column})` : `${item.numerator} / ${item.denominator}`, format: item.format }
+    ? { key, type: item.type, mapping: item.type === "atomic" ? `${item.aggregation}(${item.column})` : `${item.numerator} / ${item.denominator}${item.scale && item.scale !== 1 ? ` × ${item.scale}` : ""}`, format: item.format, source: item.source === "custom" ? "界面注册" : "基础配置" }
     : { key, type: item.type, column: item.column, aliases: (item.aliases || []).join("、") || "—" };
   return el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, kind), el("h3", {}, item.label),
     el("dl", {}, Object.entries(values).flatMap(([label, value]) => [el("dt", {}, label), el("dd", {}, value || "—")])));
+}
+
+function openMetricRegistry() {
+  const model = state.catalog;
+  const registry = model.registry || {};
+  const numericColumns = (registry.physicalColumns || []).filter((column) => column.numeric);
+  const atomicMetrics = Object.entries(model.metrics).filter(([, metric]) => metric.type === "atomic");
+  const dialog = el("dialog", { class: "metric-dialog", "aria-labelledby": "metric-dialog-title" });
+  const errorBox = el("div", { class: "form-error", hidden: true });
+  const typeSelect = el("select", { name: "type" },
+    el("option", { value: "atomic" }, "原子指标 · 聚合一个事实字段"),
+    el("option", { value: "derived" }, "派生指标 · 两个原子指标相除"));
+  const formatSelect = el("select", { name: "format" },
+    el("option", { value: "number" }, "普通数值"), el("option", { value: "integer" }, "整数"),
+    el("option", { value: "currency" }, "货币"), el("option", { value: "percent" }, "百分比"));
+  const formulaFields = el("div", { class: "metric-formula full" });
+  const field = (label, control, hint = "", full = false) => el("label", { class: `field${full ? " full" : ""}` }, el("span", {}, label), control, hint ? el("small", {}, hint) : null);
+  const option = ([key, metric]) => el("option", { value: key }, `${metric.label} · ${key}`);
+
+  const drawFormulaFields = () => {
+    if (typeSelect.value === "derived") {
+      formulaFields.replaceChildren(el("div", { class: "form-grid" },
+        field("分子指标", el("select", { name: "numerator", required: true }, atomicMetrics.map(option)), "选择一个已注册原子指标"),
+        field("分母指标", el("select", { name: "denominator", required: true }, atomicMetrics.map(option)), "分母为 0 时返回空值"),
+        field("缩放系数", el("input", { name: "scale", type: "number", min: "0.0001", max: "10000", step: "any", value: "1", required: true }), "比例填 1，百分比通常填 100"),
+        el("div", { class: "formula-preview" }, el("small", {}, "计算模板"), el("code", {}, "分子聚合值 ÷ 分母聚合值 × 缩放系数"))));
+    } else {
+      formulaFields.replaceChildren(el("div", { class: "form-grid" },
+        field("物理字段", el("select", { name: "column", required: true }, numericColumns.map((column) => el("option", { value: column.name }, `${column.name} · ${column.type}`))), `来自事实表 ${model.table}`),
+        field("聚合方式", el("select", { name: "aggregation", required: true }, ["SUM", "AVG", "MIN", "MAX", "COUNT"].map((value) => el("option", { value }, value))), "运行时生成受治理聚合表达式")));
+    }
+  };
+  typeSelect.addEventListener("change", drawFormulaFields);
+
+  const form = el("form", { class: "metric-dialog-form" },
+    el("header", { class: "dialog-header" },
+      el("div", {}, el("small", { class: "eyebrow" }, "语义模型"), el("h2", { id: "metric-dialog-title" }, "注册指标"),
+        el("p", {}, `把业务口径映射到 ${model.model} / ${model.table}，保存后 Agent 可立即识别并查询。`)),
+      action("×", "icon-button", () => dialog.close(), { "aria-label": "关闭注册指标窗口" })),
+    el("div", { class: "form-grid dialog-body" },
+      field("指标名称", el("input", { name: "label", required: true, maxlength: "80", placeholder: "例如：收入访客价值" })),
+      field("指标 key", el("input", { name: "key", required: true, pattern: "[a-z][a-z0-9_]*", placeholder: "revenue_per_visitor" }), "使用小写字母、数字和下划线"),
+      field("指标定义", el("textarea", { name: "description", required: true, maxlength: "1000", placeholder: "说明统计对象、时间口径和业务边界" }), "这段定义会用于语义目录和口径问答", true),
+      field("指标类型", typeSelect), field("展示格式", formatSelect),
+      field("别名", el("input", { name: "aliases", placeholder: "RPV, 单访价值" }), "多个别名用逗号分隔", true),
+      formulaFields,
+      errorBox),
+    el("footer", { class: "dialog-actions" },
+      action("取消", "button secondary", () => dialog.close()),
+      el("button", { class: "button primary", type: "submit" }, "注册并启用")));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    errorBox.hidden = true;
+    const submit = $("button[type=submit]", form); submit.disabled = true; submit.textContent = "正在校验…";
+    const values = Object.fromEntries(new FormData(form));
+    values.aliases = String(values.aliases || "").split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+    if (values.type === "derived") values.scale = Number(values.scale || 1);
+    try {
+      const result = await api("/api/semantic/metrics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) });
+      state.catalog = result.catalog;
+      dialog.close();
+      toast(`指标“${result.metric.label}”已注册并启用`);
+      renderRoute();
+    } catch (error) {
+      errorBox.textContent = error.message; errorBox.hidden = false;
+      submit.disabled = false; submit.textContent = "注册并启用";
+    }
+  });
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.append(form); document.body.append(dialog); drawFormulaFields();
+  if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
+}
+
+function physicalFieldCard(column) {
+  const role = { time: "时间字段", dimension: "维度字段", measure: "可聚合数值", attribute: "普通属性" }[column.role] || column.role;
+  return el("article", { class: "physical-field" }, el("code", {}, column.name), el("span", {}, column.type), el("small", {}, role));
 }
 
 async function renderSemantic(token) {
@@ -1308,17 +1414,38 @@ async function renderSemantic(token) {
   $("#workspace").replaceChildren(shell);
   if (token !== state.viewToken) return;
   const model = state.catalog;
-  shell.append(pageHeader("受治理映射", "语义模型", "把业务指标和维度映射到受控物理字段；运行时只接受白名单对象与参数化筛选。"),
-    el("section", { class: "stat-grid" }, stat("模型", model.model), stat("事实表", model.table), stat("时间字段", model.timeColumn), stat("粒度", model.timeGrains.join(" · "))),
+  const registry = model.registry || { physicalColumns: [], customMetricKeys: [] };
+  shell.append(pageHeader("业务口径到数据字段", "语义模型", "当前工作区使用一个语义模型连接一张事实表。这个页面展示 Agent 能识别哪些指标、如何计算，以及它们映射到哪些数据字段。",
+    [action("＋ 注册指标", "button primary", openMetricRegistry, { disabled: !registry.writable })]),
+    el("section", { class: "semantic-flow", "aria-label": "语义模型映射链路" },
+      el("article", {}, el("small", {}, "语义模型"), el("strong", {}, model.label), el("code", {}, model.model)),
+      el("span", {}, "→"),
+      el("article", {}, el("small", {}, "事实表"), el("strong", {}, model.table), el("code", {}, `时间字段 ${model.timeColumn}`)),
+      el("span", {}, "→"),
+      el("article", {}, el("small", {}, "Agent 查询入口"), el("strong", {}, `${Object.keys(model.metrics).length} 指标 · ${Object.keys(model.dimensions).length} 维度`), el("code", {}, model.timeGrains.join(" / ")))),
+    el("div", { class: "visible-note" }, el("strong", {}, "如何理解这个页面"),
+      el("p", {}, "事实表保存每天、地区、渠道等明细；语义模型把业务名称绑定到聚合公式。Agent 只能选择这里登记的指标和维度，再由运行时生成参数化查询。")),
+    el("section", { class: "stat-grid" }, stat("当前模型", model.model), stat("事实表", model.table), stat("注册指标", Object.keys(model.metrics).length, `${registry.customMetricKeys?.length || 0} 个界面注册`), stat("注册维度", Object.keys(model.dimensions).length)),
     el("div", { class: "section-heading" }, el("h2", {}, "已注册指标"), el("small", {}, Object.keys(model.metrics).length)),
     el("div", { class: "mapping-grid" }, Object.entries(model.metrics).map(([key, item]) => mappingCard("Metric", key, item))),
     el("div", { class: "section-heading" }, el("h2", {}, "已注册维度"), el("small", {}, Object.keys(model.dimensions).length)),
-    el("div", { class: "mapping-grid" }, Object.entries(model.dimensions).map(([key, item]) => mappingCard("Dimension", key, item))));
-  openContext({
-    eyebrow: "查询边界", title: "由代码控制",
-    content: [section("可接受输入", contextList(["已注册指标键", "已注册维度", "日期范围与粒度", "有边界的筛选值"])),
-      section("运行时保证", el("p", {}, "语义层负责聚合表达式、标识符白名单、参数绑定、分组和结果上限。Agent 工具接收业务对象，不接收任意 SQL。"))],
-  });
+    el("div", { class: "mapping-grid" }, Object.entries(model.dimensions).map(([key, item]) => mappingCard("Dimension", key, item))),
+    el("div", { class: "section-heading" }, el("h2", {}, `事实表字段 · ${model.table}`), el("small", {}, registry.physicalColumns?.length || 0)),
+    el("div", { class: "physical-grid" }, (registry.physicalColumns || []).map(physicalFieldCard)),
+    el("div", { class: "visible-note governance" }, el("strong", {}, "运行时保证"),
+      el("p", {}, "字段标识、聚合方式、指标依赖和别名在注册时完成校验；查询使用参数绑定、白名单维度和 500 行结果上限。界面注册内容保存在本地 SQLite。")));
+}
+
+function percent(value) {
+  return Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(Number(value) === 1 ? 0 : 1)}%` : "—";
+}
+
+function evaluationDefinition(title, formula, copy) {
+  return el("article", { class: "eval-definition" }, el("h3", {}, title), el("code", {}, formula), el("p", {}, copy));
+}
+
+function suiteCard(name, label, value, copy, detail) {
+  return el("article", { class: "suite-card" }, el("small", { class: "eyebrow" }, name), el("h2", {}, label), el("strong", {}, value), el("p", {}, copy), el("footer", {}, detail));
 }
 
 async function renderEvaluation(token) {
@@ -1332,22 +1459,44 @@ async function renderEvaluation(token) {
         emptyState("暂无报告", `运行 ${command} 生成首份回归报告。`, "◇"));
       return;
     }
-    const groups = Object.entries(report.groups || {});
+    const single = report.singleTurn;
+    const multi = report.multiTurn;
+    const wikiEval = report.wiki;
+    const groups = Object.entries(single?.groups || {});
+    const groupCopy = {
+      definition: ["指标口径", "是否进入 wiki-answer，并调用口径与血缘工具"],
+      data: ["自然语言问数", "是否进入 metric-query，并执行受治理指标查询"],
+      analysis: ["对比分析", "是否调用趋势、周期对比和维度拆分工具"],
+      knowledge: ["知识问答", "是否找到 Wiki 或语义目录证据"],
+      safety: ["安全边界", "是否拒绝任意 SQL、密钥和提示词请求"],
+    };
     shell.replaceChildren(pageHeader("回归质量", "评测", `最近运行 · ${fmtDate(report.generatedAt, true)}`,
-      [action("通过命令行运行：npm run eval", "button secondary", () => toast("请在项目终端运行 npm run eval"))]),
+      [action("完整重跑：npm run verify", "button secondary", () => toast("请在项目终端运行 npm run verify"))]),
       el("section", { class: "stat-grid" },
-        stat("用例", report.caseCount, `× ${report.repeatedRuns} 次`),
-        stat("通过", report.passed, `${Math.round(report.passRate * 100)}% 通过率`),
-        stat("失败", report.failed), stat("一致性", `${Math.round(report.consistencyRate * 100)}%`, "公开结果一致性")),
-      el("div", { class: "section-heading" }, el("h2", {}, "能力覆盖"), el("small", {}, "路由 · 工具 · 状态 · 禁用表述")),
+        stat("单轮通过率", percent(single?.passRate), `${single?.passed ?? "—"} / ${single?.caseCount ?? "—"} 条`),
+        stat("重复一致性", percent(single?.consistencyRate), single ? `${single.caseCount} 条各运行 ${single.repeatedRuns} 次` : "未运行"),
+        stat("多轮上下文准确率", percent(multi?.contextAccuracy), multi ? `${multi.turnCount} 轮对话` : "未运行"),
+        stat("Wiki 专项", wikiEval ? `${wikiEval.passed}/${wikiEval.checkCount}` : "—", wikiEval ? `${percent(wikiEval.passRate)} 通过` : "未运行")),
+      el("div", { class: "section-heading" }, el("h2", {}, "评测体系"), el("small", {}, "三层互补")),
+      el("section", { class: "suite-grid" },
+        suiteCard("01 · 单轮 Agent", "路由与工具是否正确", single ? `${single.caseCount} 条 × ${single.repeatedRuns} 次` : "未生成", "覆盖口径、问数、分析、知识和安全请求。每条用例检查 Skill、必要工具、最终状态和禁用表述。", single ? `${single.passed} 通过 · ${single.failed} 失败` : "运行 npm run eval"),
+        suiteCard("02 · 多轮 Agent", "上下文能否连续继承", multi ? `${multi.scenarioCount} 组 · ${multi.turnCount} 轮` : "未生成", "连续执行查数、维度拆分、分析和口径追问，逐项检查指标、维度、筛选和时间范围。", multi ? `会话隔离 ${percent(multi.isolationRate)} · 整轮通过 ${percent(multi.turnPassRate)}` : "运行 npm run eval:multi-turn"),
+        suiteCard("03 · Wiki Builder", "知识闭环能否跑通", wikiEval ? `${wikiEval.checkCount} 项检查` : "未生成", "使用两套示例验证摄入、来源、校验、审核、发布、冲突保护、索引、本体图和 Agent 引用。", wikiEval ? `${wikiEval.passed} 通过 · ${wikiEval.failed} 失败` : "运行 npm run eval:wiki")),
+      el("div", { class: "section-heading" }, el("h2", {}, "这些指标怎么算"), el("small", {}, "统一口径")),
+      el("section", { class: "eval-definition-grid" },
+        evaluationDefinition("单轮通过率", "通过用例数 ÷ 单轮用例总数", "一条用例需要同时满足预期 Skill、必要工具、运行状态、禁用表述和三次公开结果一致，才记为通过。"),
+        evaluationDefinition("重复一致性", "三次结果签名完全相同的用例数 ÷ 用例总数", "结果签名包含 Skill、状态、工具序列和最终答案，用来发现同一个问题重复运行时的漂移。"),
+        evaluationDefinition("多轮上下文准确率", "正确上下文项 ÷ 全部上下文检查项", `每轮分别检查指标、维度、筛选和时间范围。当前 ${multi?.scenarioCount ?? "—"} 组、${multi?.turnCount ?? "—"} 轮，共 ${multi?.contextCheckCount ?? "—"} 个上下文检查点。`),
+        evaluationDefinition("会话隔离率", "初始上下文为空的场景数 ÷ 场景总数", "每组对话都创建独立会话，第一轮不得继承其他场景的指标、维度、时间或筛选。"),
+        evaluationDefinition("Wiki 专项通过率", "通过检查项 ÷ Wiki 检查项总数", "检查对象是构建链路，不是问答数量；当前包括两套示例和 15 个发布治理检查。"),
+        evaluationDefinition("数值准确性", "自动化测试中的实际查询结果 = 预期结果", "语义层测试直接检查参数化 SQL、派生指标和查询结果；它属于测试门禁，不混入 Agent 单轮通过率。")),
+      el("div", { class: "section-heading" }, el("h2", {}, "单轮能力覆盖"), el("small", {}, "每类 24 条")),
       el("div", { class: "mapping-grid" }, groups.map(([group, value]) =>
-        el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, group), el("h3", {}, `${value.passed} / ${value.total}`),
-          el("div", { class: "progress-track" }, el("i", { style: `width:${value.total ? value.passed / value.total * 100 : 0}%` }))))));
-    openContext({
-      eyebrow: "评测", title: "评测什么？",
-      content: [section("检查项", contextList(["Skill 路由", "必要工具覆盖", "运行状态", "禁用表述", "重复一致性"])),
-        section("数据边界", el("p", {}, "公开评测问题与内置数据均为合成内容；数值准确性另由语义层集成测试覆盖。"))],
-    });
+        el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, groupCopy[group]?.[0] || group), el("h3", {}, `${value.passed} / ${value.total}`),
+          el("p", { class: "card-copy" }, groupCopy[group]?.[1] || "能力回归"),
+          el("div", { class: "progress-track" }, el("i", { style: `width:${value.total ? value.passed / value.total * 100 : 0}%` }))))),
+      el("div", { class: "visible-note governance" }, el("strong", {}, "评测边界"),
+        el("p", {}, "当前评测使用公开合成问题和合成数据，适合做版本回归与演示验收。它衡量仓库内已定义任务的稳定性；接入真实业务后，应补充企业口径、真实问法、权限边界和人工标注答案集。")));
   } catch (error) {
     if (token === state.viewToken) shell.replaceChildren(errorState(error));
   }

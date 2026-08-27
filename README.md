@@ -27,6 +27,7 @@ MetricLore 是一个本地优先的数据智能体工作台。它把语义层、
 | 连续问数 | 继承指标、时间、维度和筛选条件 | 图表、可排序表格、查询范围 |
 | 对比分析 | 组合趋势、前期对比和维度拆分 | 变化描述、贡献维度、证据边界 |
 | 指标问答 | 读取语义目录、Wiki 页面和本体关系 | 定义、计算规则、来源、血缘路径 |
+| 指标注册 | 在语义模型页登记原子指标或派生指标 | 字段校验、公式预览、即时问数与口径问答 |
 | Wiki 构建 | 解析 PDF、DOCX、XLSX、CSV、Markdown、SQL、HTML、TXT 和 ZIP | 候选实体、来源定位、校验结果 |
 | 知识治理 | 编辑、冲突检测、批量审核、版本化发布 | Review 记录、Wiki 版本、热更新索引 |
 | Agent 观测 | 持久化 Plan、Skill、Tool、Evidence 和校验事件 | 消息级 Public Trace、停止与重试 |
@@ -63,7 +64,7 @@ npm start
 
 1. 打开「Wiki 构建」。
 2. 上传文件、文件夹或 ZIP；第一次体验可直接选择 [`examples/wiki-builder/ecommerce-growth`](examples/wiki-builder/ecommerce-growth) 或 [`examples/wiki-builder/subscription-saas`](examples/wiki-builder/subscription-saas)。
-3. 在「审核队列」核对候选内容、来源定位、本体关系和冲突。
+3. 在「审核队列」点击每行的「审核」，核对候选内容、来源定位、本体关系和冲突；无问题的候选也可以勾选后批量批准。
 4. 批准并发布，在「Wiki 浏览」和「本体图」中查看新知识。
 5. 回到「智能问答」，用刚发布的知识继续提问。
 
@@ -147,7 +148,7 @@ Wiki Builder 使用「解析 → 抽取 → 校验 → 审核 → 发布」工�
 
 ### Semantic Layer
 
-[`config/semantic-model.json`](config/semantic-model.json) 注册指标表达式、聚合方式、维度、别名、时间字段和物理映射。所有问数都经过参数化查询生成器，派生指标使用同一份受治理定义。
+[`config/semantic-model.json`](config/semantic-model.json) 提供基础指标、维度、时间字段和物理映射。运行后也可以在「语义模型」页面注册原子指标或两个原子指标相除的派生指标；自定义指标保存在本地 SQLite，保存后立即进入 Agent 的识别、口径问答与查询链路。所有问数都经过参数化查询生成器，派生指标使用同一份受治理定义。
 
 ### Ontology + LLM Wiki
 
@@ -206,12 +207,12 @@ npm run audit            # 密钥与内部标识扫描
 npm run verify           # 完整发布门禁
 ```
 
-当前基线：53 条自动化测试；120 条单轮用例通过率与三次运行一致率 100%；30 组多轮评测上下文准确率与会话隔离率 100%；15 项 Wiki Builder 专项检查全部通过。评测报告写入 `outputs/evals/`。
+当前基线：55 条自动化测试；120 条单轮用例通过率与三次运行一致率 100%；30 组多轮评测上下文准确率与会话隔离率 100%；15 项 Wiki Builder 专项检查全部通过。评测报告写入 `outputs/evals/`。工作台的「评测」页面同时展示三个评测集的定义、公式、样本规模和适用边界。
 
 ## 接入自己的数据与知识
 
 1. 将事实数据导入 SQLite，或为目标数据库实现查询适配器。
-2. 在 [`config/semantic-model.json`](config/semantic-model.json) 注册指标、维度、别名和物理字段。
+2. 在「语义模型」页面注册指标，或编辑 [`config/semantic-model.json`](config/semantic-model.json) 维护基础指标、维度、别名和物理字段。
 3. 通过 Wiki Builder 导入业务文档，审核候选实体和本体关系后发布。
 4. 为新增指标、知识和 Skill 添加测试与评测用例。
 5. 运行 `npm run verify` 检查完整链路。
@@ -235,6 +236,8 @@ GET  /api/wiki/pages/:key
 GET  /api/wiki/pages/:key/source
 GET  /api/wiki/graph
 
+GET  /api/catalog
+POST /api/semantic/metrics
 POST /api/query
 POST /api/chat
 ```
