@@ -19,22 +19,82 @@ function setup(runScript = async () => "ok") {
   return { db, semantic, wiki, service: new EvaluationService({ db, semantic, wiki, runScript }) };
 }
 
-test("versions the Judge dataset and preserves a user-managed current version", () => {
+test("creates a new Judge dataset without a key and versions an existing one with a key", () => {
   const { service } = setup();
   try {
-    const initial = service.listDatasets().filter((item) => item.key === "knowledge-judge");
-    assert.equal(initial.length, 1);
-    const created = service.createJudgeDatasetVersion({
+    const fresh = service.createJudgeDatasetVersion({
       name: "业务知识问答集",
       description: "团队维护的金标问答",
       cases: [{ id: "biz-001", question: "收入如何定义？", referenceAnswer: "支付成功订单的含税收入", requiredSources: ["wiki/metrics/revenue.md"] }],
     });
-    assert.equal(created.version, 2);
-    assert.equal(created.origin, "user");
+    assert.match(fresh.key, /^judge_/);
+    assert.equal(fresh.version, 1);
+    assert.equal(fresh.origin, "user");
+
+    // 新建评测集不影响内置 knowledge-judge 的当前版本
+    const builtin = service.listDatasets().filter((item) => item.key === "knowledge-judge");
+    assert.equal(builtin.length, 1);
+    assert.equal(builtin[0].version, 1);
+
+    const versioned = service.createJudgeDatasetVersion({
+      key: "knowledge-judge",
+      name: "知识问答质量集",
+      description: "用户维护版本",
+      cases: [{ id: "biz-001", question: "收入如何定义？", referenceAnswer: "支付成功订单的含税收入", requiredSources: ["wiki/metrics/revenue.md"] }],
+    });
+    assert.equal(versioned.version, 2);
     service.refreshDatasets();
     const current = service.listDatasets().find((item) => item.key === "knowledge-judge" && item.current);
     assert.equal(current.version, 2);
-    assert.equal(service.currentDatasetContent("knowledge-judge").cases[0].id, "biz-001");
+    assert.equal(service.currentJudgeDatasetContent("knowledge-judge").content.cases[0].id, "biz-001");
+  } finally {
+    closeDatabase();
+  }
+});
+
+test("manages multiple independent Judge datasets with per-key current versions", () => {
+  const { service } = setup();
+  try {
+    const first = service.createJudgeDatasetVersion({
+      name: "客服领域集",
+      description: "客服场景金标",
+      cases: [{ id: "cs-001", question: "退款时效？", referenceAnswer: "48 小时内原路退回", requiredSources: [] }],
+    });
+    assert.match(first.key, /^judge_/);
+    assert.equal(first.version, 1);
+
+    const second = service.createJudgeDatasetVersion({
+      key: first.key,
+      name: "客服领域集",
+      description: "补充新场景",
+      cases: [
+        { id: "cs-001", question: "退款时效？", referenceAnswer: "48 小时内原路退回", requiredSources: [] },
+        { id: "cs-002", question: "发票开具？", referenceAnswer: "订单完成后自动开具电子发票", requiredSources: ["wiki/ops/invoice.md"] },
+      ],
+    });
+    assert.equal(second.key, first.key);
+    assert.equal(second.version, 2);
+    assert.equal(second.origin, "user");
+
+    const other = service.createJudgeDatasetVersion({
+      name: "风控领域集",
+      cases: [{ id: "rc-001", question: "风控拦截阈值？", referenceAnswer: "单笔金额超过 5 万元需二次校验", requiredSources: [] }],
+    });
+    assert.notEqual(other.key, first.key);
+
+    const keys = new Set(service.listJudgeDatasets().map((item) => item.key));
+    assert.ok(keys.has(first.key));
+    assert.ok(keys.has(other.key));
+
+    const currentA = service.currentJudgeDatasetContent(first.key);
+    assert.equal(currentA.version, 2);
+    assert.equal(currentA.content.cases.length, 2);
+    const currentB = service.currentJudgeDatasetContent(other.key);
+    assert.equal(currentB.version, 1);
+    assert.equal(currentB.content.cases[0].id, "rc-001");
+
+    // 新增评测集不影响内置 knowledge-judge 的当前版本
+    assert.equal(service.currentJudgeDatasetContent("knowledge-judge").version, 1);
   } finally {
     closeDatabase();
   }

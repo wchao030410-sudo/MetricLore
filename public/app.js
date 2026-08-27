@@ -1596,12 +1596,15 @@ async function renderEvaluation(token) {
     };
     const editJudgeDataset = async () => {
       try {
-        const { dataset } = await api("/api/evaluation/datasets/knowledge-judge/current");
-        const draft = structuredClone(dataset || { name: "知识问答质量集", description: "", cases: [] });
+        const { datasets } = await api("/api/evaluation/datasets/judge");
         const dialog = el("dialog", { class: "metric-dialog eval-dataset-dialog", "aria-labelledby": "judge-dataset-title" });
         const errorBox = el("div", { class: "form-error", hidden: true });
         const caseHost = el("div", { class: "judge-case-list" });
-        const drawCases = () => caseHost.replaceChildren(...draft.cases.map((item, index) => {
+        const state = { key: "", draft: null };
+        const nameInput = el("input", { maxlength: "100", required: true });
+        const descriptionInput = el("textarea", { maxlength: "500", placeholder: "说明这版评测集覆盖的业务范围" });
+        const versionNote = el("small", { class: "form-hint" });
+        const drawCases = () => caseHost.replaceChildren(...(state.draft?.cases || []).map((item, index) => {
           const question = el("textarea", { placeholder: "用户问题", required: true }, item.question || "");
           const reference = el("textarea", { placeholder: "参考答案与关键限制", required: true }, item.referenceAnswer || "");
           const sources = el("input", { value: (item.requiredSources || []).join(", "), placeholder: "必需来源路径，用逗号分隔" });
@@ -1609,33 +1612,56 @@ async function renderEvaluation(token) {
           reference.addEventListener("input", () => { item.referenceAnswer = reference.value; });
           sources.addEventListener("input", () => { item.requiredSources = sources.value.split(/[,，]/).map((value) => value.trim()).filter(Boolean); });
           return el("article", { class: "judge-case-edit" },
-            el("header", {}, el("strong", {}, `用例 ${index + 1}`), action("删除", "text-button danger-text", () => { draft.cases.splice(index, 1); drawCases(); })),
+            el("header", {}, el("strong", {}, `用例 ${index + 1}`), action("删除", "text-button danger-text", () => { state.draft.cases.splice(index, 1); drawCases(); })),
             el("label", { class: "field" }, el("span", {}, "问题"), question),
             el("label", { class: "field" }, el("span", {}, "参考答案"), reference),
             el("label", { class: "field" }, el("span", {}, "必需来源"), sources));
         }));
-        const nameInput = el("input", { value: draft.name || "知识问答质量集", maxlength: "100", required: true });
-        const descriptionInput = el("textarea", { maxlength: "500", placeholder: "说明这版评测集覆盖的业务范围" }, draft.description || "");
+        const loadDraft = (dataset) => {
+          state.draft = structuredClone(dataset?.content || { name: "知识问答质量集", description: "", cases: [{ id: `judge-${Date.now()}`, question: "", referenceAnswer: "", requiredSources: [] }] });
+          nameInput.value = state.draft.name;
+          descriptionInput.value = state.draft.description;
+          versionNote.textContent = dataset
+            ? `当前版本 v${dataset.version} · ${dataset.caseCount} 条用例。保存会创建新版本，旧版本继续保留。`
+            : "保存会创建新的评测集，并为其生成独立的评测集 Key。";
+          drawCases();
+        };
+        const selectDataset = async (key) => {
+          if (!key) { state.key = ""; loadDraft(null); return; }
+          try {
+            const { dataset } = await api(`/api/evaluation/datasets/${encodeURIComponent(key)}/current`);
+            state.key = key; loadDraft(dataset);
+          } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
+        };
+        const picker = el("select", { class: "field-input" },
+          el("option", { value: "" }, "＋ 新建评测集"),
+          ...Object.values(datasets.reduce((byKey, dataset) => {
+            if (!byKey[dataset.key] || dataset.version > byKey[dataset.key].version) byKey[dataset.key] = dataset;
+            return byKey;
+          }, {})).map((dataset) => el("option", { value: dataset.key }, `${dataset.name}（v${dataset.version}）`)));
+        picker.addEventListener("change", () => selectDataset(picker.value));
+        if (datasets.length) { picker.value = datasets[0].key; await selectDataset(picker.value); } else { loadDraft(null); }
         const form = el("form", { class: "metric-dialog-form" },
           el("header", { class: "dialog-header" },
-            el("div", {}, el("small", { class: "eyebrow" }, "版本化评测集"), el("h2", { id: "judge-dataset-title" }, "新建 Judge 评测集版本"),
-              el("p", {}, "保存会创建新版本，旧版本继续保留。下一次评测会把当前版本和知识库版本一起写入运行快照。")),
+            el("div", {}, el("small", { class: "eyebrow" }, "版本化评测集"), el("h2", { id: "judge-dataset-title" }, "管理 Judge 评测集"),
+              el("p", {}, "每个评测集都有独立 Key 和版本链，可分别录入不同业务领域的金标问答。")),
             action("×", "icon-button", () => dialog.close(), { "aria-label": "关闭评测集编辑器" })),
           el("div", { class: "dialog-body" },
+            el("label", { class: "field" }, el("span", {}, "评测集"), picker, versionNote),
             el("div", { class: "form-grid" },
               el("label", { class: "field" }, el("span", {}, "评测集名称"), nameInput),
               el("label", { class: "field" }, el("span", {}, "版本说明"), descriptionInput)),
-            el("div", { class: "section-heading" }, el("h3", {}, "金标问答"), action("＋ 添加用例", "button secondary", () => { draft.cases.push({ id: `judge-${Date.now()}`, question: "", referenceAnswer: "", requiredSources: [] }); drawCases(); })),
+            el("div", { class: "section-heading" }, el("h3", {}, "金标问答"), action("＋ 添加用例", "button secondary", () => { state.draft.cases.push({ id: `judge-${Date.now()}`, question: "", referenceAnswer: "", requiredSources: [] }); drawCases(); })),
             caseHost, errorBox),
-          el("footer", { class: "dialog-actions" }, action("取消", "button secondary", () => dialog.close()), el("button", { class: "button primary", type: "submit" }, "保存为新版本")));
+          el("footer", { class: "dialog-actions" }, action("取消", "button secondary", () => dialog.close()), el("button", { class: "button primary", type: "submit" }, "保存版本")));
         form.addEventListener("submit", async (event) => {
           event.preventDefault(); errorBox.hidden = true;
           try {
-            await api("/api/evaluation/datasets/knowledge-judge/versions", {
+            await api("/api/evaluation/datasets/judge/versions", {
               method: "POST", headers: { "content-type": "application/json" },
-              body: JSON.stringify({ name: nameInput.value, description: descriptionInput.value, cases: draft.cases }),
+              body: JSON.stringify({ key: state.key || undefined, name: nameInput.value, description: descriptionInput.value, cases: state.draft.cases }),
             });
-            dialog.close(); toast("Judge 评测集新版本已保存"); renderRoute();
+            dialog.close(); toast(state.key ? "Judge 评测集新版本已保存" : "已创建新的 Judge 评测集"); renderRoute();
           } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
         });
         dialog.addEventListener("close", () => dialog.remove()); dialog.append(form); document.body.append(dialog); drawCases(); dialog.showModal();
@@ -1667,20 +1693,29 @@ async function renderEvaluation(token) {
         el("td", {}, `v${item.version}`, item.current ? el("span", { class: "current-tag" }, "当前") : null),
         el("td", {}, item.caseCount), el("td", {}, el("code", {}, item.contentHash.slice(0, 10))),
         el("td", {}, item.origin === "user" ? "界面维护" : "仓库内置"), el("td", {}, fmtDate(item.createdAt, true)))))));
+    const scoreCard = (label, value, note, tag) => el("article", { class: "score-card" },
+      el("small", {}, label), el("strong", {}, value ?? "—"),
+      tag ? el("em", { class: "score-tag", "data-kind": tag === "LLM 评分" ? "llm" : "deterministic" }, tag) : null,
+      note ? el("p", {}, note) : null);
+    const judgeCards = (judgeEval?.datasets?.length ? judgeEval.datasets : (judgeEval ? [{ name: "知识问答质量集", score: judgeEval.score, scoredCases: judgeEval.scoredCases, caseCount: judgeEval.caseCount }] : []))
+      .map((item) => scoreCard(item.name, item.score == null ? "待配置" : (item.score * 100).toFixed(1), item.scoredCases != null ? `${item.scoredCases}/${item.caseCount} 条` : (llmConfigured ? "等待运行" : "需要 LLM API"), "LLM 评分"));
+    const scoreboard = el("section", { class: "scoreboard" },
+      scoreCard("单轮通过率", percent(single?.passRate), single ? `${single.passed}/${single.caseCount} 条` : "未运行", "确定性回归"),
+      scoreCard("多轮上下文准确率", percent(multi?.contextAccuracy), multi ? `${multi.turnCount} 轮` : "未运行", "确定性回归"),
+      scoreCard("Wiki 专项通过率", percent(wikiEval?.passRate), wikiEval ? `${wikiEval.passed}/${wikiEval.checkCount}` : "未运行", "确定性回归"),
+      scoreCard("数据准确率", percent(dataEval?.accuracy), dataEval ? `${dataEval.passedChecks}/${dataEval.valueCheckCount} 数值 · ${dataEval.modelLabel || dataEval.modelId || "当前模型"}` : "未运行", "确定性回归"),
+      ...judgeCards);
     shell.replaceChildren(pageHeader("版本化质量运行", "评测", report ? `最近报告 · ${fmtDate(report.generatedAt, true)}` : "创建评测运行后生成首份质量报告",
       [action("管理 Judge 评测集", "button secondary", editJudgeDataset), action(runActive ? "评测进行中" : "▶ 开始评测", "button primary", startEvaluation, { disabled: runActive })]),
       progressPanel,
       latestRun?.status === "failed" ? el("div", { class: "error-state" }, `最近评测失败：${latestRun.error?.message || "未知错误"}`) : null,
-      el("section", { class: "stat-grid quality-stat-grid" },
-        stat("单轮通过率", percent(single?.passRate), `${single?.passed ?? "—"} / ${single?.caseCount ?? "—"} 条`),
-        stat("数据准确率", percent(dataEval?.accuracy), dataEval ? `${dataEval.passedChecks} / ${dataEval.valueCheckCount} 个数值 · ${dataEval.modelLabel || dataEval.modelId || "当前模型"}` : "未运行"),
-        stat("知识问答 Judge", judgeEval?.score == null ? "待配置" : `${(judgeEval.score * 100).toFixed(1)}`, judgeEval?.score == null ? (llmConfigured ? "等待运行" : "需要 LLM API") : `${judgeEval.scoredCases} / ${judgeEval.caseCount} 条`),
-        stat("平均耗时", formatDuration(report?.averageLatencyMs), "单轮与多轮 Agent 平均")),
+      scoreboard,
       el("section", { class: "snapshot-grid" },
         el("article", {}, el("small", {}, "当前知识快照"), el("strong", {}, currentKnowledge?.label || "—"), el("p", {}, `${currentKnowledge?.documentCount || 0} 文档 · ${currentKnowledge?.entityCount || 0} 实体 · ${currentKnowledge?.contentHash?.slice(0, 8) || "—"}`)),
         el("article", {}, el("small", {}, "Agent 当前模型"), el("strong", {}, currentModel?.label || currentModel?.id || "—"), el("p", {}, `${currentModel?.metricCount || 0} 指标 · schema ${currentModel?.schemaHash?.slice(0, 8) || "—"}`)),
         el("article", {}, el("small", {}, "当前评测集"), el("strong", {}, `${currentDatasets.length} 套`), el("p", {}, currentDatasets.map((item) => `${item.key} v${item.version}`).join(" · ")))),
-      el("div", { class: "section-heading" }, el("h2", {}, "评测体系"), el("small", {}, "五层互补")),
+      el("details", { class: "eval-details" }, el("summary", {}, "指标口径与评测定义"), el("div", {},
+        el("div", { class: "section-heading" }, el("h2", {}, "评测体系"), el("small", {}, "五层互补")),
       el("section", { class: "suite-grid" },
         suiteCard("01 · 单轮 Agent", "路由与工具是否正确", single ? `${single.caseCount} 条 × ${single.repeatedRuns} 次` : "未生成", "覆盖口径、问数、分析、知识和安全请求。每条用例检查 Skill、必要工具、最终状态和禁用表述。", single ? `${single.passed} 通过 · ${single.failed} 失败` : "运行 npm run eval"),
         suiteCard("02 · 多轮 Agent", "上下文能否连续继承", multi ? `${multi.scenarioCount} 组 · ${multi.turnCount} 轮` : "未生成", "连续执行查数、维度拆分、分析和口径追问，逐项检查指标、维度、筛选和时间范围。", multi ? `会话隔离 ${percent(multi.isolationRate)} · 整轮通过 ${percent(multi.turnPassRate)}` : "运行 npm run eval:multi-turn"),
@@ -1696,7 +1731,7 @@ async function renderEvaluation(token) {
         evaluationDefinition("数据准确率", "与独立重算结果一致的数值 ÷ 全部数值检查点", "覆盖全量、时间范围、维度拆分和维度筛选；派生指标在原始明细上独立聚合后计算，允许极小浮点误差。"),
         evaluationDefinition("LLM Judge 分数", "四项平均得分 ÷ 5 × 100", "正确性、忠实性、完整性和引用质量各 0–5 分。Judge 使用版本化参考答案和必需来源评分；可通过 LLM_JUDGE_MODEL 配置独立裁判模型。"),
         evaluationDefinition("平均耗时", "全部 Agent 运行耗时之和 ÷ 运行次数", "同时保留 P95 耗时。确定性回归和 LLM Judge 分开计时，避免模型网络延迟掩盖语义查询性能。"),
-        evaluationDefinition("Wiki 专项通过率", "通过检查项 ÷ Wiki 检查项总数", "检查对象是构建链路，包括摄入、来源、校验、审核、版本发布、冲突保护、索引、图谱和 Agent 引用。")),
+          evaluationDefinition("Wiki 专项通过率", "通过检查项 ÷ Wiki 检查项总数", "检查对象是构建链路，包括摄入、来源、校验、审核、版本发布、冲突保护、索引、图谱和 Agent 引用。")))),
       el("div", { class: "section-heading" }, el("h2", {}, "单轮能力覆盖"), el("small", {}, "每类 24 条")),
       el("div", { class: "mapping-grid" }, groups.map(([group, value]) =>
         el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, groupCopy[group]?.[0] || group), el("h3", {}, `${value.passed} / ${value.total}`),

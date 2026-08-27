@@ -23,11 +23,21 @@ function bounded(value) {
   return Math.max(0, Math.min(5, Number(value) || 0));
 }
 
+function mean(values) {
+  const valid = values.map(Number).filter(Number.isFinite);
+  return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
+}
+
 loadEnv();
 const db = openDatabase();
 runMigrations(db);
-const stored = db.prepare("SELECT content_json, version FROM evaluation_dataset_versions WHERE dataset_key = 'knowledge-judge' AND is_current = 1").get();
-const dataset = stored?.content_json ? JSON.parse(stored.content_json) : JSON.parse(readFileSync(resolve(ROOT, "evals/knowledge-judge.json"), "utf8"));
+const storedDatasets = db.prepare("SELECT * FROM evaluation_dataset_versions WHERE suite = 'llm_judge' AND is_current = 1 ORDER BY dataset_key").all()
+  .map((row) => ({ key: row.dataset_key, name: row.name, version: row.version, content: JSON.parse(row.content_json) }))
+  .filter((item) => item.content?.cases?.length);
+if (!storedDatasets.length) {
+  const builtin = JSON.parse(readFileSync(resolve(ROOT, "evals/knowledge-judge.json"), "utf8"));
+  storedDatasets.push({ key: "knowledge-judge", name: "知识问答质量集", version: 1, content: builtin });
+}
 const configured = Boolean(process.env.LLM_API_KEY && process.env.LLM_MODEL);
 const outputPath = resolve(ROOT, "outputs/evals/judge-latest.json");
 mkdirSync(resolve(ROOT, "outputs/evals"), { recursive: true });
@@ -35,14 +45,12 @@ mkdirSync(resolve(ROOT, "outputs/evals"), { recursive: true });
 if (!configured) {
   const report = {
     generatedAt: new Date().toISOString(), status: "not_configured", configured: false,
-    datasetVersion: stored?.version || 1, caseCount: dataset.cases.length, scoredCases: 0,
-    score: null, dimensions: null, averageAgentLatencyMs: null, averageJudgeLatencyMs: null,
-    message: "配置 LLM_API_KEY 和 LLM_MODEL 后运行 LLM-as-a-Judge。",
-    results: [],
+    datasetCount: storedDatasets.length, datasets: storedDatasets.map((item) => ({ key: item.key, name: item.name, version: item.version, caseCount: item.content.cases.length, scoredCases: 0, score: null, dimensions: null })),
+    score: null, message: "配置 LLM_API_KEY 和 LLM_MODEL 后运行 LLM-as-a-Judge。", results: [],
   };
   writeFileSync(outputPath, JSON.stringify(report, null, 2));
   closeDatabase();
-  console.log(JSON.stringify({ status: report.status, caseCount: report.caseCount, score: null, output: "outputs/evals/judge-latest.json" }, null, 2));
+  console.log(JSON.stringify({ status: report.status, datasetCount: report.datasetCount, score: null, output: "outputs/evals/judge-latest.json" }, null, 2));
 } else {
   const ontology = new Ontology();
   const semantic = new SemanticLayer(undefined, db);
@@ -50,8 +58,8 @@ if (!configured) {
   const agent = new MetricLoreAgent({ semantic, wiki, db, ontology, skills: new SkillRegistry() });
   const base = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const judgeModel = process.env.LLM_JUDGE_MODEL || process.env.LLM_MODEL;
-  const results = [];
-  for (const item of dataset.cases) {
+
+  const judgeCase = async (item) => {
     try {
       const agentStarted = performance.now();
       const answer = await agent.answer(item.question);
@@ -77,37 +85,57 @@ if (!configured) {
         correctness: bounded(score.correctness), groundedness: bounded(score.groundedness),
         completeness: bounded(score.completeness), citationQuality: bounded(score.citationQuality),
       };
-      results.push({
+      return {
         id: item.id, question: item.question, status: "scored", dimensions,
         score: Object.values(dimensions).reduce((sum, value) => sum + value, 0) / 20,
         reason: String(score.reason || "").slice(0, 500),
         agentLatencyMs, judgeLatencyMs: performance.now() - judgeStarted,
         answer: answer.answer, sources: answer.sources,
-      });
+      };
     } catch (error) {
-      results.push({ id: item.id, question: item.question, status: "failed", error: error.message });
+      return { id: item.id, question: item.question, status: "failed", error: error.message };
     }
-  }
-  const scored = results.filter((item) => item.status === "scored");
+  };
+
   const dimensionNames = ["correctness", "groundedness", "completeness", "citationQuality"];
-  const dimensions = Object.fromEntries(dimensionNames.map((name) => [name, scored.length ? scored.reduce((sum, item) => sum + item.dimensions[name], 0) / scored.length / 5 : null]));
+  const results = [];
+  const datasetScores = [];
+  for (const dataset of storedDatasets) {
+    const perCase = [];
+    for (const item of dataset.content.cases) {
+      const result = await judgeCase(item);
+      perCase.push(result);
+      results.push({ datasetKey: dataset.key, ...result });
+    }
+    const scored = perCase.filter((item) => item.status === "scored");
+    const dimensions = Object.fromEntries(dimensionNames.map((name) => [name, scored.length ? scored.reduce((sum, item) => sum + item.dimensions[name], 0) / scored.length / 5 : null]));
+    datasetScores.push({
+      key: dataset.key,
+      name: dataset.name,
+      version: dataset.version,
+      caseCount: dataset.content.cases.length,
+      scoredCases: scored.length,
+      failedCases: dataset.content.cases.length - scored.length,
+      score: scored.length ? scored.reduce((sum, item) => sum + item.score, 0) / scored.length : null,
+      dimensions,
+      averageAgentLatencyMs: mean(scored.map((item) => item.agentLatencyMs)),
+      averageJudgeLatencyMs: mean(scored.map((item) => item.judgeLatencyMs)),
+    });
+  }
+  const scores = datasetScores.map((item) => item.score).filter(Number.isFinite);
   const report = {
     generatedAt: new Date().toISOString(),
-    status: scored.length === dataset.cases.length ? "completed" : scored.length ? "partial" : "failed",
+    status: scores.length === datasetScores.length ? "completed" : scores.length ? "partial" : "failed",
     configured: true,
     judgeModel,
-    datasetVersion: stored?.version || 1,
-    caseCount: dataset.cases.length,
-    scoredCases: scored.length,
-    failedCases: dataset.cases.length - scored.length,
-    score: scored.length ? scored.reduce((sum, item) => sum + item.score, 0) / scored.length : null,
-    dimensions,
-    averageAgentLatencyMs: scored.length ? scored.reduce((sum, item) => sum + item.agentLatencyMs, 0) / scored.length : null,
-    averageJudgeLatencyMs: scored.length ? scored.reduce((sum, item) => sum + item.judgeLatencyMs, 0) / scored.length : null,
+    datasetCount: storedDatasets.length,
+    datasets: datasetScores,
+    score: scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null,
+    averageAgentLatencyMs: mean(datasetScores.map((item) => item.averageAgentLatencyMs)),
+    averageJudgeLatencyMs: mean(datasetScores.map((item) => item.averageJudgeLatencyMs)),
     results,
   };
   writeFileSync(outputPath, JSON.stringify(report, null, 2));
   closeDatabase();
-  console.log(JSON.stringify({ status: report.status, caseCount: report.caseCount, scoredCases: report.scoredCases, score: report.score, averageAgentLatencyMs: report.averageAgentLatencyMs, output: "outputs/evals/judge-latest.json" }, null, 2));
+  console.log(JSON.stringify({ status: report.status, datasetCount: report.datasetCount, score: report.score, datasets: datasetScores.map((item) => ({ key: item.key, score: item.score })), averageAgentLatencyMs: report.averageAgentLatencyMs, output: "outputs/evals/judge-latest.json" }, null, 2));
 }
-

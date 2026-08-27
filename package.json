@@ -1,6 +1,6 @@
 {
   "name": "metriclore",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Ontology-grounded agent for trustworthy metric answers and data analysis",
   "type": "module",
   "scripts": {

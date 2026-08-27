@@ -202,7 +202,7 @@ export function createAppServer(deps = defaultDeps()) {
           } : null,
           wiki: wikiEval ? { checkCount: wikiEval.checkCount, passed: wikiEval.passed, failed: wikiEval.failed, passRate: wikiEval.checkCount ? wikiEval.passed / wikiEval.checkCount : 0 } : null,
           data: dataEval ? { modelId: dataEval.modelId, modelLabel: dataEval.modelLabel || null, queryCount: dataEval.queryCount, metricCount: dataEval.metricCount, valueCheckCount: dataEval.valueCheckCount, passedChecks: dataEval.passedChecks, failedChecks: dataEval.failedChecks, accuracy: dataEval.accuracy, averageQueryMs: dataEval.averageQueryMs, p95QueryMs: dataEval.p95QueryMs } : null,
-          judge: judgeEval ? { status: judgeEval.status, configured: judgeEval.configured, judgeModel: judgeEval.judgeModel, datasetVersion: judgeEval.datasetVersion, caseCount: judgeEval.caseCount, scoredCases: judgeEval.scoredCases, failedCases: judgeEval.failedCases, score: judgeEval.score, dimensions: judgeEval.dimensions, averageAgentLatencyMs: judgeEval.averageAgentLatencyMs, averageJudgeLatencyMs: judgeEval.averageJudgeLatencyMs, message: judgeEval.message } : null,
+          judge: judgeEval ? { status: judgeEval.status, configured: judgeEval.configured, judgeModel: judgeEval.judgeModel, datasetCount: judgeEval.datasetCount, datasets: judgeEval.datasets || null, caseCount: judgeEval.caseCount, scoredCases: judgeEval.scoredCases, failedCases: judgeEval.failedCases, score: judgeEval.score, dimensions: judgeEval.dimensions, averageAgentLatencyMs: judgeEval.averageAgentLatencyMs, averageJudgeLatencyMs: judgeEval.averageJudgeLatencyMs, message: judgeEval.message } : null,
         } : null;
         return ok(res, 200, {
           report,
@@ -216,11 +216,17 @@ export function createAppServer(deps = defaultDeps()) {
         });
       }
       if (req.method === "GET" && url.pathname === "/api/evaluation/datasets") return ok(res, 200, { datasets: evaluations.listDatasets() });
-      if (req.method === "GET" && url.pathname === "/api/evaluation/datasets/knowledge-judge/current") {
-        return ok(res, 200, { dataset: evaluations.currentDatasetContent("knowledge-judge") });
+      if (req.method === "GET" && url.pathname === "/api/evaluation/datasets/judge") return ok(res, 200, { datasets: evaluations.listJudgeDatasets() });
+      const judgeCurrent = url.pathname.match(/^\/api\/evaluation\/datasets\/([^/]+)\/current$/);
+      if (req.method === "GET" && judgeCurrent) {
+        const dataset = evaluations.currentJudgeDatasetContent(decodeURIComponent(judgeCurrent[1]));
+        if (!dataset) return err(res, 404, "NOT_FOUND", "评测集不存在");
+        return ok(res, 200, { dataset });
       }
-      if (req.method === "POST" && url.pathname === "/api/evaluation/datasets/knowledge-judge/versions") {
-        return ok(res, 201, { version: evaluations.createJudgeDatasetVersion(await body(req)), datasets: evaluations.listDatasets() });
+      if (req.method === "POST" && url.pathname === "/api/evaluation/datasets/judge/versions") {
+        const payload = await body(req);
+        const version = evaluations.createJudgeDatasetVersion(payload);
+        return ok(res, 201, { version, datasets: evaluations.listJudgeDatasets() });
       }
       if (req.method === "GET" && url.pathname === "/api/evaluation/runs") return ok(res, 200, { runs: evaluations.listRuns(url.searchParams.get("limit") || 20) });
       if (req.method === "POST" && url.pathname === "/api/evaluation/runs") return ok(res, 202, { run: evaluations.createRun() });
