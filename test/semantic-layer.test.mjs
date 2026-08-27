@@ -73,3 +73,38 @@ test("registers, queries and reloads a custom metric from SQLite", () => {
     closeDatabase();
   }
 });
+
+test("creates multiple semantic models and switches the Agent model", () => {
+  const db = openDatabase(resolve(mkdtempSync(resolve(tmpdir(), "ml-models-")), "test.db"));
+  try {
+    runMigrations(db);
+    const layer = new SemanticLayer(undefined, db);
+    const created = layer.registerModel({
+      id: "regional_commerce",
+      label: "区域经营模型",
+      description: "按区域查看经营指标",
+      table: "daily_metrics",
+      timeColumn: "date",
+      dimensionColumns: ["region", "channel"],
+    });
+    assert.equal(created.ready, false);
+    assert.equal(layer.catalog("regional_commerce").registry.selectedModelId, "regional_commerce");
+    assert.equal(layer.catalog("regional_commerce").registry.physicalColumns.length, 6);
+
+    layer.registerMetric({
+      modelId: "regional_commerce", key: "regional_orders", label: "区域订单量",
+      description: "区域内支付成功且未取消的订单数", type: "atomic", column: "orders", aggregation: "SUM", format: "integer",
+    });
+    const activated = layer.activateModel("regional_commerce");
+    assert.equal(activated.active, true);
+    assert.equal(layer.model.model, "regional_commerce");
+    assert.ok(layer.execute(db, { metrics: ["regional_orders"], dimensions: ["region"] }).rows.length > 0);
+
+    const reloaded = new SemanticLayer(undefined, db);
+    assert.equal(reloaded.activeModelId, "regional_commerce");
+    assert.equal(reloaded.catalog().metrics.regional_orders.label, "区域订单量");
+    assert.equal(reloaded.catalog().registry.models.length, 2);
+  } finally {
+    closeDatabase();
+  }
+});

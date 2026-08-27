@@ -6,6 +6,7 @@ import { MetricLoreAgent } from "./lib/agent.mjs";
 import { loadEnv, ROOT } from "./lib/config.mjs";
 import { ConversationService } from "./lib/conversation.mjs";
 import { openDatabase } from "./lib/database.mjs";
+import { EvaluationService } from "./lib/evaluation-service.mjs";
 import { parseMultipart } from "./lib/http/multipart.mjs";
 import { IngestionService } from "./lib/ingest/service.mjs";
 import { newId } from "./lib/ingest/util.mjs";
@@ -89,12 +90,14 @@ function defaultDeps() {
   const agent = new MetricLoreAgent({ semantic, wiki, db, ontology, skills });
   const ingestion = new IngestionService({ db, ontology, wiki });
   const conversations = new ConversationService({ db, agent, semantic });
-  return { db, semantic, ontology, skills, wiki, agent, ingestion, conversations };
+  const evaluations = new EvaluationService({ db, semantic, wiki });
+  return { db, semantic, ontology, skills, wiki, agent, ingestion, conversations, evaluations };
 }
 
 export function createAppServer(deps = defaultDeps()) {
   const { db, semantic, ontology, skills, wiki, agent, ingestion, conversations } = deps;
   semantic.attachDatabase?.(db);
+  const evaluations = deps.evaluations || new EvaluationService({ db, semantic, wiki });
 
   const streamJobEvents = (req, res, jobId) => {
     const snapshot = ingestion.getJob(jobId);
@@ -168,38 +171,76 @@ export function createAppServer(deps = defaultDeps()) {
         return json(res, 200, { status: "ok", database: "sqlite", wikiDocuments: wiki.documents.length, wikiEntities: wiki.entities.size, skills: skills.list().map((item) => item.name), llmConfigured: Boolean(process.env.LLM_API_KEY) });
       }
       if (req.method === "GET" && url.pathname === "/api/evaluation") {
-        const readReport = (file) => {
-          const path = resolve(ROOT, `outputs/evals/${file}`);
-          return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
-        };
-        const single = readReport("latest.json");
-        const multi = readReport("multi-turn-latest.json");
-        const wikiEval = readReport("wiki-latest.json");
-        if (!single && !multi && !wikiEval) return ok(res, 200, { report: null, command: "npm run verify" });
+        evaluations.refreshDatasets();
+        const reports = evaluations.aggregateReports();
+        const single = reports.singleTurn;
+        const multi = reports.multiTurn;
+        const wikiEval = reports.wiki;
+        const dataEval = reports.data;
+        const judgeEval = reports.judge;
         const groups = {};
         for (const result of single?.results || []) {
           const group = groups[result.group] ||= { total: 0, passed: 0 };
           group.total += 1;
           if (result.pass) group.passed += 1;
         }
-        const generatedAt = [single?.generatedAt, multi?.generatedAt, wikiEval?.generatedAt].filter(Boolean).sort().at(-1) || null;
-        return ok(res, 200, { report: {
+        const generatedAt = [single?.generatedAt, multi?.generatedAt, wikiEval?.generatedAt, dataEval?.generatedAt, judgeEval?.generatedAt].filter(Boolean).sort().at(-1) || null;
+        const report = generatedAt ? {
           generatedAt,
-          singleTurn: single ? { caseCount: single.caseCount, repeatedRuns: single.repeatedRuns, passed: single.passed, failed: single.failed, passRate: single.passRate, consistencyRate: single.consistencyRate, groups } : null,
+          averageLatencyMs: reports.averageLatencyMs,
+          singleTurn: single ? { caseCount: single.caseCount, repeatedRuns: single.repeatedRuns, passed: single.passed, failed: single.failed, passRate: single.passRate, consistencyRate: single.consistencyRate, averageLatencyMs: single.averageLatencyMs, p95LatencyMs: single.p95LatencyMs, groups } : null,
           multiTurn: multi ? {
             scenarioCount: multi.scenarioCount, turnCount: multi.turnCount,
             passedScenarios: multi.passedScenarios, failedScenarios: multi.failedScenarios,
             passedTurns: multi.passedTurns, turnPassRate: multi.turnPassRate ?? (multi.passedTurns / multi.turnCount),
             contextCheckCount: multi.contextCheckCount, passedContextChecks: multi.passedContextChecks,
             contextAccuracy: multi.contextAccuracy, isolatedScenarios: multi.isolatedScenarios, isolationRate: multi.isolationRate,
+            averageLatencyMs: multi.averageLatencyMs, p95LatencyMs: multi.p95LatencyMs,
           } : null,
           wiki: wikiEval ? { checkCount: wikiEval.checkCount, passed: wikiEval.passed, failed: wikiEval.failed, passRate: wikiEval.checkCount ? wikiEval.passed / wikiEval.checkCount : 0 } : null,
-        } });
+          data: dataEval ? { modelId: dataEval.modelId, queryCount: dataEval.queryCount, metricCount: dataEval.metricCount, valueCheckCount: dataEval.valueCheckCount, passedChecks: dataEval.passedChecks, failedChecks: dataEval.failedChecks, accuracy: dataEval.accuracy, averageQueryMs: dataEval.averageQueryMs, p95QueryMs: dataEval.p95QueryMs } : null,
+          judge: judgeEval ? { status: judgeEval.status, configured: judgeEval.configured, judgeModel: judgeEval.judgeModel, datasetVersion: judgeEval.datasetVersion, caseCount: judgeEval.caseCount, scoredCases: judgeEval.scoredCases, failedCases: judgeEval.failedCases, score: judgeEval.score, dimensions: judgeEval.dimensions, averageAgentLatencyMs: judgeEval.averageAgentLatencyMs, averageJudgeLatencyMs: judgeEval.averageJudgeLatencyMs, message: judgeEval.message } : null,
+        } : null;
+        return ok(res, 200, {
+          report,
+          latestRun: evaluations.latestRun(),
+          runs: evaluations.listRuns(20),
+          datasets: evaluations.listDatasets(),
+          currentKnowledge: evaluations.knowledgeSnapshot(),
+          currentModel: evaluations.modelSnapshot(),
+          llmConfigured: Boolean(process.env.LLM_API_KEY && process.env.LLM_MODEL),
+          command: "npm run verify",
+        });
       }
-      if (req.method === "GET" && url.pathname === "/api/catalog") return json(res, 200, semantic.catalog());
+      if (req.method === "GET" && url.pathname === "/api/evaluation/datasets") return ok(res, 200, { datasets: evaluations.listDatasets() });
+      if (req.method === "GET" && url.pathname === "/api/evaluation/datasets/knowledge-judge/current") {
+        return ok(res, 200, { dataset: evaluations.currentDatasetContent("knowledge-judge") });
+      }
+      if (req.method === "POST" && url.pathname === "/api/evaluation/datasets/knowledge-judge/versions") {
+        return ok(res, 201, { version: evaluations.createJudgeDatasetVersion(await body(req)), datasets: evaluations.listDatasets() });
+      }
+      if (req.method === "GET" && url.pathname === "/api/evaluation/runs") return ok(res, 200, { runs: evaluations.listRuns(url.searchParams.get("limit") || 20) });
+      if (req.method === "POST" && url.pathname === "/api/evaluation/runs") return ok(res, 202, { run: evaluations.createRun() });
+      const evaluationRun = url.pathname.match(/^\/api\/evaluation\/runs\/([^/]+)$/);
+      if (req.method === "GET" && evaluationRun) {
+        const run = evaluations.getRun(decodeURIComponent(evaluationRun[1]));
+        if (!run) return err(res, 404, "NOT_FOUND", "评测运行不存在");
+        return ok(res, 200, { run });
+      }
+      if (req.method === "GET" && url.pathname === "/api/catalog") return json(res, 200, semantic.catalog(url.searchParams.get("modelId") || undefined));
+      if (req.method === "POST" && url.pathname === "/api/semantic/models") {
+        const model = semantic.registerModel(await body(req));
+        return ok(res, 201, { model, catalog: semantic.catalog(model.id) });
+      }
+      const semanticActivate = url.pathname.match(/^\/api\/semantic\/models\/([^/]+)\/activate$/);
+      if (req.method === "POST" && semanticActivate) {
+        const model = semantic.activateModel(decodeURIComponent(semanticActivate[1]));
+        return ok(res, 200, { model, catalog: semantic.catalog(model.id) });
+      }
       if (req.method === "POST" && url.pathname === "/api/semantic/metrics") {
-        const metric = semantic.registerMetric(await body(req));
-        return ok(res, 201, { metric, catalog: semantic.catalog() });
+        const payload = await body(req);
+        const metric = semantic.registerMetric(payload, payload.modelId);
+        return ok(res, 201, { metric, catalog: semantic.catalog(metric.modelId) });
       }
       if (req.method === "GET" && url.pathname === "/api/skills") return json(res, 200, { skills: skills.list() });
       if (req.method === "GET" && url.pathname === "/api/ontology") return json(res, 200, { schema: ontology.schema, entities: [...wiki.entities.values()].map((entity) => wiki.publicEntity(entity)) });

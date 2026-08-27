@@ -15,7 +15,9 @@
     "eval": "node scripts/run-evals.mjs",
     "eval:multi-turn": "node scripts/run-multi-turn-evals.mjs",
     "eval:wiki": "node scripts/run-wiki-evals.mjs",
-    "verify": "npm test && npm run health && npm run eval && npm run eval:multi-turn && npm run eval:wiki && npm run audit && npm audit --omit=dev",
+    "eval:data": "node scripts/run-data-evals.mjs",
+    "eval:judge": "node scripts/run-judge-evals.mjs",
+    "verify": "npm test && npm run health && npm run eval && npm run eval:multi-turn && npm run eval:wiki && npm run eval:data && npm run eval:judge && npm run audit && npm audit --omit=dev",
     "demo": "node scripts/demo.mjs"
   },
   "engines": {

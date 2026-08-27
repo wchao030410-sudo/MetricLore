@@ -373,6 +373,38 @@ code, pre { font-family: var(--mono); }
 .suite-card p { color: var(--muted); font-size: 10px; line-height: 1.65; }
 .suite-card footer { border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 9px; margin-top: auto; padding-top: 12px; }
 .eval-definition-grid { display: grid; gap: 10px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+
+/* 多语义模型管理 */
+.semantic-model-manager { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 18px; padding: 16px; }
+.semantic-model-manager .section-heading { margin: 0 0 12px; }
+.semantic-model-tabs { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); }
+.semantic-model-tab { background: var(--canvas); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; display: grid; gap: 5px; min-height: 56px; padding: 12px 14px; text-align: left; }
+.semantic-model-tab:hover { border-color: var(--line-dark); }
+.semantic-model-tab.selected { background: var(--blue-soft); border-color: var(--blue); }
+.semantic-model-tab > span { align-items: center; display: flex; gap: 7px; }
+.semantic-model-tab strong { font-size: 12px; }
+.semantic-model-tab em { background: var(--blue); border-radius: 999px; color: #fff; font-size: 8px; font-style: normal; padding: 2px 7px; }
+.semantic-model-tab small { color: var(--muted); font-size: 9px; }
+
+/* 评测运行、快照与历史 */
+.evaluation-progress { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 18px; padding: 18px 20px; }
+.evaluation-progress h2 { font-size: 17px; margin: 6px 0 6px; }
+.evaluation-progress p { color: var(--muted); font-size: 10px; line-height: 1.6; margin: 0 0 12px; }
+.snapshot-grid { display: grid; gap: 12px; grid-template-columns: repeat(3,minmax(0,1fr)); margin: 18px 0; }
+.snapshot-grid article { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 15px 17px; }
+.snapshot-grid small { color: var(--muted); font-size: 9px; letter-spacing: .06em; }
+.snapshot-grid strong { display: block; font-size: 13px; margin-top: 5px; }
+.snapshot-grid p { color: var(--muted); font-size: 9px; line-height: 1.5; margin: 5px 0 0; }
+.evaluation-history, .evaluation-datasets { margin-bottom: 8px; }
+.evaluation-datasets tr.current-version { background: #f2f8f4; }
+.current-tag { background: #2fa04c; border-radius: 999px; color: #fff; font-size: 8px; margin-left: 6px; padding: 2px 6px; }
+.judge-case-list { display: grid; gap: 10px; margin-top: 12px; }
+.judge-case-edit { background: var(--canvas); border: 1px solid var(--line); border-radius: 9px; display: grid; gap: 9px; padding: 13px; }
+.judge-case-edit header { align-items: center; display: flex; justify-content: space-between; }
+.judge-case-edit header strong { font-size: 11px; }
+.judge-case-edit textarea { background: #fff; border: 1px solid var(--line-dark); border-radius: 6px; font-size: 11px; min-height: 54px; padding: 8px 10px; resize: vertical; width: 100%; }
+.judge-case-edit input { background: #fff; border: 1px solid var(--line-dark); border-radius: 6px; font-size: 11px; min-height: 34px; padding: 7px 10px; width: 100%; }
+.text-button.danger-text { color: var(--red); }
 .eval-definition { background: var(--paper); border: 1px solid var(--line); border-radius: 9px; padding: 16px; }
 .eval-definition h3 { font-size: 12px; margin: 0 0 8px; }
 .eval-definition code { background: var(--canvas); color: var(--blue); display: block; font-size: 9px; line-height: 1.5; padding: 7px 9px; }
@@ -413,6 +445,8 @@ code, pre { font-family: var(--mono); }
   .toolbar { grid-template-columns: 1fr 1fr; }
   .toolbar .field:first-child { grid-column: 1 / -1; }
   .form-grid, .mode-grid, .mapping-grid, .suite-grid, .eval-definition-grid { grid-template-columns: 1fr; }
+  .snapshot-grid { grid-template-columns: 1fr 1fr; }
+  .semantic-model-tabs { grid-template-columns: 1fr; }
   .semantic-flow { grid-template-columns: 1fr; }
   .semantic-flow > span { display: none; }
   .physical-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }

@@ -1,0 +1,42 @@
+{
+  "name": "知识问答质量集",
+  "description": "使用 LLM-as-a-Judge 评估知识回答的正确性、忠实性、完整性和引用质量。",
+  "cases": [
+    {
+      "id": "judge-001",
+      "question": "客单价的口径是什么？",
+      "referenceAnswer": "客单价等于相同筛选范围内的收入总和除以订单量总和，分母为零时返回空值，不能直接平均每日客单价。",
+      "requiredSources": ["wiki/metrics/aov.md"]
+    },
+    {
+      "id": "judge-002",
+      "question": "下单转化率如何计算，有什么使用限制？",
+      "referenceAnswer": "下单转化率等于订单量总和除以访客数总和再乘以 100%。演示数据按日汇总，跨日访客数相加不等于跨周期去重用户数，因此不可直接视作真实跨周期口径。",
+      "requiredSources": ["wiki/metrics/conversion-rate.md", "wiki/rules/rule-daily-grain.md"]
+    },
+    {
+      "id": "judge-003",
+      "question": "数据语义层为什么不让模型直接拼 SQL？",
+      "referenceAnswer": "语义层使用预注册的指标、维度、聚合和字段白名单生成参数化查询，降低口径漂移和 SQL 注入风险，并保留确定的查询范围与证据。",
+      "requiredSources": ["wiki/concepts/semantic-layer.md", "wiki/concepts/agent-boundary.md"]
+    },
+    {
+      "id": "judge-004",
+      "question": "日经营事实表包含哪些字段？",
+      "referenceAnswer": "事实表包含日期、地区、渠道、收入、订单量和访客数。",
+      "requiredSources": ["wiki/assets/asset-daily-metrics.md"]
+    },
+    {
+      "id": "judge-005",
+      "question": "经营概览看板展示哪些核心指标？",
+      "referenceAnswer": "经营概览用于展示收入、订单量和客单价等核心经营指标。",
+      "requiredSources": ["wiki/dashboards/dashboard-commerce-overview.md"]
+    },
+    {
+      "id": "judge-006",
+      "question": "MetricLore 的模型、语义层和知识库分别负责什么？",
+      "referenceAnswer": "模型理解问题并组织回答；语义层负责指标白名单、聚合、日期、参数化查询和结果限制；知识库提供可追溯的业务定义、规则、来源和本体关系。",
+      "requiredSources": ["wiki/concepts/agent-boundary.md", "wiki/concepts/semantic-layer.md"]
+    }
+  ]
+}

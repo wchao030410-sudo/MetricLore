@@ -44,7 +44,7 @@ function statusText(status = "unknown") {
 const state = {
   health: null, catalog: null, ontology: null, skills: null, conversations: [],
   currentConversation: null, selectedFiles: [], selectedCandidates: new Set(), viewToken: 0,
-  streams: new Map(), pendingQuestion: null,
+  streams: new Map(), pendingQuestion: null, evaluationTimer: null,
 };
 
 function appendChildren(node, children) {
@@ -1336,6 +1336,7 @@ function mappingCard(kind, key, item) {
 function openMetricRegistry() {
   const model = state.catalog;
   const registry = model.registry || {};
+  if (!registry.writable) { toast("当前语义目录为只读，请检查数据库迁移和写入权限"); return; }
   const numericColumns = (registry.physicalColumns || []).filter((column) => column.numeric);
   const atomicMetrics = Object.entries(model.metrics).filter(([, metric]) => metric.type === "atomic");
   const dialog = el("dialog", { class: "metric-dialog", "aria-labelledby": "metric-dialog-title" });
@@ -1386,6 +1387,7 @@ function openMetricRegistry() {
     errorBox.hidden = true;
     const submit = $("button[type=submit]", form); submit.disabled = true; submit.textContent = "正在校验…";
     const values = Object.fromEntries(new FormData(form));
+    values.modelId = model.model;
     values.aliases = String(values.aliases || "").split(/[,，]/).map((item) => item.trim()).filter(Boolean);
     if (values.type === "derived") values.scale = Number(values.scale || 1);
     try {
@@ -1404,6 +1406,77 @@ function openMetricRegistry() {
   if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
 }
 
+function openSemanticModelRegistry() {
+  const tables = state.catalog?.registry?.databaseTables || [];
+  if (!state.catalog?.registry?.writable) { toast("当前语义目录为只读，请检查数据库迁移和写入权限"); return; }
+  if (!tables.length) { toast("没有可用于建模的事实表"); return; }
+  const dialog = el("dialog", { class: "metric-dialog", "aria-labelledby": "model-dialog-title" });
+  const errorBox = el("div", { class: "form-error", hidden: true });
+  const field = (label, control, hint = "", full = false) => el("label", { class: `field${full ? " full" : ""}` }, el("span", {}, label), control, hint ? el("small", {}, hint) : null);
+  const tableSelect = el("select", { name: "table", required: true }, tables.map((table) => el("option", { value: table.name }, table.name)));
+  const timeSelect = el("select", { name: "timeColumn", required: true });
+  const dimensionSelect = el("select", { name: "dimensionColumns", multiple: true, size: "5", "aria-label": "选择维度字段" });
+  const refreshColumns = () => {
+    const table = tables.find((item) => item.name === tableSelect.value) || tables[0];
+    const previousTime = timeSelect.value;
+    timeSelect.replaceChildren(...table.columns.map((column) => el("option", {
+      value: column.name, selected: column.name === previousTime || (!previousTime && /date|time|day/i.test(column.name)),
+    }, `${column.name} · ${column.type}`)));
+    const time = timeSelect.value;
+    dimensionSelect.replaceChildren(...table.columns.filter((column) => column.name !== time).map((column) => el("option", {
+      value: column.name, selected: !column.numeric,
+    }, `${column.name} · ${column.type}${column.numeric ? "" : " · 推荐维度"}`)));
+  };
+  tableSelect.addEventListener("change", refreshColumns);
+  timeSelect.addEventListener("change", refreshColumns);
+  const form = el("form", { class: "metric-dialog-form" },
+    el("header", { class: "dialog-header" },
+      el("div", {}, el("small", { class: "eyebrow" }, "语义模型工作区"), el("h2", { id: "model-dialog-title" }, "新增语义模型"),
+        el("p", {}, "选择本地事实表和时间字段。系统会登记所选维度，随后可以继续注册原子指标与派生指标。")),
+      action("×", "icon-button", () => dialog.close(), { "aria-label": "关闭新增语义模型窗口" })),
+    el("div", { class: "form-grid dialog-body" },
+      field("模型名称", el("input", { name: "label", required: true, maxlength: "80", placeholder: "例如：订阅经营模型" })),
+      field("模型 ID", el("input", { name: "id", required: true, pattern: "[a-z][a-z0-9_]*", placeholder: "subscription_daily" }), "小写字母、数字和下划线"),
+      field("模型说明", el("textarea", { name: "description", maxlength: "500", placeholder: "说明模型覆盖的业务主题和数据粒度" }), "用于模型列表和评测快照", true),
+      field("事实表", tableSelect),
+      field("时间字段", timeSelect),
+      field("维度字段", dimensionSelect, "可多选；文本字段默认选中", true),
+      errorBox),
+    el("footer", { class: "dialog-actions" },
+      action("取消", "button secondary", () => dialog.close()),
+      el("button", { class: "button primary", type: "submit" }, "创建模型")));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); errorBox.hidden = true;
+    const submit = $("button[type=submit]", form); submit.disabled = true; submit.textContent = "正在创建…";
+    const data = new FormData(form);
+    const payload = Object.fromEntries(data);
+    payload.dimensionColumns = data.getAll("dimensionColumns");
+    try {
+      const result = await api("/api/semantic/models", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      state.catalog = result.catalog; dialog.close(); toast(`语义模型“${result.model.label}”已创建`); renderRoute();
+    } catch (error) {
+      errorBox.textContent = error.message; errorBox.hidden = false; submit.disabled = false; submit.textContent = "创建模型";
+    }
+  });
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.append(form); document.body.append(dialog); refreshColumns();
+  if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
+}
+
+async function selectSemanticModel(modelId) {
+  try {
+    state.catalog = await api(`/api/catalog?modelId=${encodeURIComponent(modelId)}`);
+    renderRoute();
+  } catch (error) { toast(error.message); }
+}
+
+async function activateSemanticModel(modelId) {
+  try {
+    const result = await api(`/api/semantic/models/${encodeURIComponent(modelId)}/activate`, { method: "POST" });
+    state.catalog = result.catalog; toast(`Agent 已切换到“${result.model.label}”`); renderRoute();
+  } catch (error) { toast(error.message); }
+}
+
 function physicalFieldCard(column) {
   const role = { time: "时间字段", dimension: "维度字段", measure: "可聚合数值", attribute: "普通属性" }[column.role] || column.role;
   return el("article", { class: "physical-field" }, el("code", {}, column.name), el("span", {}, column.type), el("small", {}, role));
@@ -1415,16 +1488,31 @@ async function renderSemantic(token) {
   if (token !== state.viewToken) return;
   const model = state.catalog;
   const registry = model.registry || { physicalColumns: [], customMetricKeys: [] };
-  shell.append(pageHeader("业务口径到数据字段", "语义模型", "当前工作区使用一个语义模型连接一张事实表。这个页面展示 Agent 能识别哪些指标、如何计算，以及它们映射到哪些数据字段。",
-    [action("＋ 注册指标", "button primary", openMetricRegistry, { disabled: !registry.writable })]),
+  const selectedModel = (registry.models || []).find((item) => item.id === model.model);
+  const modelSwitcher = el("section", { class: "semantic-model-manager" },
+    el("div", { class: "section-heading" }, el("h2", {}, "语义模型"), el("small", {}, `${registry.models?.length || 1} 个模型`)),
+    el("div", { class: "semantic-model-tabs" }, (registry.models || []).map((item) => action("", `semantic-model-tab ${item.id === model.model ? "selected" : ""}`, () => selectSemanticModel(item.id), { "aria-label": `查看语义模型 ${item.label}` }))));
+  $$(".semantic-model-tab", modelSwitcher).forEach((button, index) => {
+    const item = registry.models[index];
+    button.replaceChildren(el("span", {}, el("strong", {}, item.label), item.active ? el("em", {}, "Agent 当前") : null),
+      el("small", {}, `${item.table} · ${item.metricCount} 指标 · ${item.dimensionCount} 维度`));
+  });
+  const headerActions = [
+    action("＋ 新增模型", "button secondary", openSemanticModelRegistry),
+    action("＋ 注册指标", "button primary", openMetricRegistry),
+  ];
+  if (registry.activeModelId !== model.model) headerActions.push(action("设为 Agent 当前模型", "button amber", () => activateSemanticModel(model.model)));
+  shell.append(pageHeader("业务口径到数据字段", "语义模型管理", "一个工作区可以维护多个语义模型。选择模型查看字段映射和指标；设为 Agent 当前模型后，问数、分析和评测会使用该模型。",
+    headerActions),
+    modelSwitcher,
     el("section", { class: "semantic-flow", "aria-label": "语义模型映射链路" },
-      el("article", {}, el("small", {}, "语义模型"), el("strong", {}, model.label), el("code", {}, model.model)),
+      el("article", {}, el("small", {}, selectedModel?.active ? "Agent 当前模型" : "正在查看"), el("strong", {}, model.label), el("code", {}, model.model)),
       el("span", {}, "→"),
       el("article", {}, el("small", {}, "事实表"), el("strong", {}, model.table), el("code", {}, `时间字段 ${model.timeColumn}`)),
       el("span", {}, "→"),
       el("article", {}, el("small", {}, "Agent 查询入口"), el("strong", {}, `${Object.keys(model.metrics).length} 指标 · ${Object.keys(model.dimensions).length} 维度`), el("code", {}, model.timeGrains.join(" / ")))),
-    el("div", { class: "visible-note" }, el("strong", {}, "如何理解这个页面"),
-      el("p", {}, "事实表保存每天、地区、渠道等明细；语义模型把业务名称绑定到聚合公式。Agent 只能选择这里登记的指标和维度，再由运行时生成参数化查询。")),
+    el("div", { class: "visible-note" }, el("strong", {}, "如何使用多个模型"),
+      el("p", {}, "每个模型绑定一张事实表和独立的指标、维度目录。新增模型后先注册至少一个指标，再将它设为 Agent 当前模型。切换“正在查看”的模型不会影响正在使用的 Agent。")),
     el("section", { class: "stat-grid" }, stat("当前模型", model.model), stat("事实表", model.table), stat("注册指标", Object.keys(model.metrics).length, `${registry.customMetricKeys?.length || 0} 个界面注册`), stat("注册维度", Object.keys(model.dimensions).length)),
     el("div", { class: "section-heading" }, el("h2", {}, "已注册指标"), el("small", {}, Object.keys(model.metrics).length)),
     el("div", { class: "mapping-grid" }, Object.entries(model.metrics).map(([key, item]) => mappingCard("Metric", key, item))),
@@ -1452,17 +1540,17 @@ async function renderEvaluation(token) {
   const shell = el("div", { class: "page-shell" }, loading());
   $("#workspace").replaceChildren(shell);
   try {
-    const { report, command } = await api("/api/evaluation");
+    const result = await api("/api/evaluation");
     if (token !== state.viewToken) return;
-    if (!report) {
-      shell.replaceChildren(pageHeader("回归质量", "评测", "评测报告只读取本地最新一次运行结果。"),
-        emptyState("暂无报告", `运行 ${command} 生成首份回归报告。`, "◇"));
-      return;
-    }
-    const single = report.singleTurn;
-    const multi = report.multiTurn;
-    const wikiEval = report.wiki;
+    const { report, latestRun, runs = [], datasets = [], currentKnowledge, currentModel, llmConfigured, command } = result;
+    const single = report?.singleTurn;
+    const multi = report?.multiTurn;
+    const wikiEval = report?.wiki;
+    const dataEval = report?.data;
+    const judgeEval = report?.judge;
     const groups = Object.entries(single?.groups || {});
+    const runActive = ["queued", "running"].includes(latestRun?.status);
+    const currentDatasets = datasets.filter((item) => item.current);
     const groupCopy = {
       definition: ["指标口径", "是否进入 wiki-answer，并调用口径与血缘工具"],
       data: ["自然语言问数", "是否进入 metric-query，并执行受治理指标查询"],
@@ -1470,33 +1558,127 @@ async function renderEvaluation(token) {
       knowledge: ["知识问答", "是否找到 Wiki 或语义目录证据"],
       safety: ["安全边界", "是否拒绝任意 SQL、密钥和提示词请求"],
     };
-    shell.replaceChildren(pageHeader("回归质量", "评测", `最近运行 · ${fmtDate(report.generatedAt, true)}`,
-      [action("完整重跑：npm run verify", "button secondary", () => toast("请在项目终端运行 npm run verify"))]),
-      el("section", { class: "stat-grid" },
+    const startEvaluation = async () => {
+      try {
+        await api("/api/evaluation/runs", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+        toast("评测已开始，页面会自动刷新进度"); renderRoute();
+      } catch (error) { toast(error.message); }
+    };
+    const editJudgeDataset = async () => {
+      try {
+        const { dataset } = await api("/api/evaluation/datasets/knowledge-judge/current");
+        const draft = structuredClone(dataset || { name: "知识问答质量集", description: "", cases: [] });
+        const dialog = el("dialog", { class: "metric-dialog eval-dataset-dialog", "aria-labelledby": "judge-dataset-title" });
+        const errorBox = el("div", { class: "form-error", hidden: true });
+        const caseHost = el("div", { class: "judge-case-list" });
+        const drawCases = () => caseHost.replaceChildren(...draft.cases.map((item, index) => {
+          const question = el("textarea", { placeholder: "用户问题", required: true }, item.question || "");
+          const reference = el("textarea", { placeholder: "参考答案与关键限制", required: true }, item.referenceAnswer || "");
+          const sources = el("input", { value: (item.requiredSources || []).join(", "), placeholder: "必需来源路径，用逗号分隔" });
+          question.addEventListener("input", () => { item.question = question.value; });
+          reference.addEventListener("input", () => { item.referenceAnswer = reference.value; });
+          sources.addEventListener("input", () => { item.requiredSources = sources.value.split(/[,，]/).map((value) => value.trim()).filter(Boolean); });
+          return el("article", { class: "judge-case-edit" },
+            el("header", {}, el("strong", {}, `用例 ${index + 1}`), action("删除", "text-button danger-text", () => { draft.cases.splice(index, 1); drawCases(); })),
+            el("label", { class: "field" }, el("span", {}, "问题"), question),
+            el("label", { class: "field" }, el("span", {}, "参考答案"), reference),
+            el("label", { class: "field" }, el("span", {}, "必需来源"), sources));
+        }));
+        const nameInput = el("input", { value: draft.name || "知识问答质量集", maxlength: "100", required: true });
+        const descriptionInput = el("textarea", { maxlength: "500", placeholder: "说明这版评测集覆盖的业务范围" }, draft.description || "");
+        const form = el("form", { class: "metric-dialog-form" },
+          el("header", { class: "dialog-header" },
+            el("div", {}, el("small", { class: "eyebrow" }, "版本化评测集"), el("h2", { id: "judge-dataset-title" }, "新建 Judge 评测集版本"),
+              el("p", {}, "保存会创建新版本，旧版本继续保留。下一次评测会把当前版本和知识库版本一起写入运行快照。")),
+            action("×", "icon-button", () => dialog.close(), { "aria-label": "关闭评测集编辑器" })),
+          el("div", { class: "dialog-body" },
+            el("div", { class: "form-grid" },
+              el("label", { class: "field" }, el("span", {}, "评测集名称"), nameInput),
+              el("label", { class: "field" }, el("span", {}, "版本说明"), descriptionInput)),
+            el("div", { class: "section-heading" }, el("h3", {}, "金标问答"), action("＋ 添加用例", "button secondary", () => { draft.cases.push({ id: `judge-${Date.now()}`, question: "", referenceAnswer: "", requiredSources: [] }); drawCases(); })),
+            caseHost, errorBox),
+          el("footer", { class: "dialog-actions" }, action("取消", "button secondary", () => dialog.close()), el("button", { class: "button primary", type: "submit" }, "保存为新版本")));
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault(); errorBox.hidden = true;
+          try {
+            await api("/api/evaluation/datasets/knowledge-judge/versions", {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ name: nameInput.value, description: descriptionInput.value, cases: draft.cases }),
+            });
+            dialog.close(); toast("Judge 评测集新版本已保存"); renderRoute();
+          } catch (error) { errorBox.textContent = error.message; errorBox.hidden = false; }
+        });
+        dialog.addEventListener("close", () => dialog.remove()); dialog.append(form); document.body.append(dialog); drawCases(); dialog.showModal();
+      } catch (error) { toast(error.message); }
+    };
+    const formatDuration = (value) => {
+      const ms = Number(value);
+      if (!Number.isFinite(ms)) return "—";
+      return ms < 1000 ? `${ms.toFixed(0)} ms` : `${(ms / 1000).toFixed(2)} s`;
+    };
+    const progress = latestRun?.progress || {};
+    const progressPanel = runActive ? el("section", { class: "evaluation-progress" },
+      el("div", {}, el("small", { class: "eyebrow" }, "评测运行中"), el("h2", {}, progress.current || "正在准备"),
+        el("p", {}, `已完成 ${progress.completed || 0} / ${progress.total || 5} 个评测套件。运行使用创建时的知识、模型和评测集快照。`)),
+      el("div", { class: "progress-track" }, el("i", { style: `width:${(progress.completed || 0) / Math.max(progress.total || 5, 1) * 100}%` }))) : null;
+    const runRows = runs.length ? el("div", { class: "table-panel" }, el("table", { class: "work-table evaluation-history" },
+      el("thead", {}, el("tr", {}, ["运行", "状态", "知识版本", "语义模型", "评测集快照", "完成时间"].map((item) => el("th", {}, item)))),
+      el("tbody", {}, runs.map((run) => el("tr", {},
+        el("td", {}, el("code", {}, run.id.slice(0, 14)), el("small", {}, fmtDate(run.createdAt, true))),
+        el("td", {}, statusPill(run.status)),
+        el("td", {}, run.knowledge?.label || "—", el("small", {}, run.knowledge?.contentHash?.slice(0, 8) || "")),
+        el("td", {}, run.model?.label || run.model?.id || "—", el("small", {}, run.model?.schemaHash?.slice(0, 8) || "")),
+        el("td", {}, (run.datasets || []).map((item) => `${item.key} v${item.version}`).join(" · ") || "—"),
+        el("td", {}, fmtDate(run.completedAt, true))))))) : emptyState("还没有评测运行", "点击右上角“开始评测”创建第一条带版本快照的运行记录。", "◇");
+    const datasetRows = el("div", { class: "table-panel" }, el("table", { class: "work-table evaluation-datasets" },
+      el("thead", {}, el("tr", {}, ["评测集", "套件", "版本", "用例", "内容哈希", "来源", "创建时间"].map((item) => el("th", {}, item)))),
+      el("tbody", {}, datasets.map((item) => el("tr", { class: item.current ? "current-version" : "" },
+        el("td", {}, el("strong", {}, item.name), el("small", {}, item.key)), el("td", {}, item.suite),
+        el("td", {}, `v${item.version}`, item.current ? el("span", { class: "current-tag" }, "当前") : null),
+        el("td", {}, item.caseCount), el("td", {}, el("code", {}, item.contentHash.slice(0, 10))),
+        el("td", {}, item.origin === "user" ? "界面维护" : "仓库内置"), el("td", {}, fmtDate(item.createdAt, true)))))));
+    shell.replaceChildren(pageHeader("版本化质量运行", "评测", report ? `最近报告 · ${fmtDate(report.generatedAt, true)}` : "创建评测运行后生成首份质量报告",
+      [action("管理 Judge 评测集", "button secondary", editJudgeDataset), action(runActive ? "评测进行中" : "▶ 开始评测", "button primary", startEvaluation, { disabled: runActive })]),
+      progressPanel,
+      latestRun?.status === "failed" ? el("div", { class: "error-state" }, `最近评测失败：${latestRun.error?.message || "未知错误"}`) : null,
+      el("section", { class: "stat-grid quality-stat-grid" },
         stat("单轮通过率", percent(single?.passRate), `${single?.passed ?? "—"} / ${single?.caseCount ?? "—"} 条`),
-        stat("重复一致性", percent(single?.consistencyRate), single ? `${single.caseCount} 条各运行 ${single.repeatedRuns} 次` : "未运行"),
-        stat("多轮上下文准确率", percent(multi?.contextAccuracy), multi ? `${multi.turnCount} 轮对话` : "未运行"),
-        stat("Wiki 专项", wikiEval ? `${wikiEval.passed}/${wikiEval.checkCount}` : "—", wikiEval ? `${percent(wikiEval.passRate)} 通过` : "未运行")),
-      el("div", { class: "section-heading" }, el("h2", {}, "评测体系"), el("small", {}, "三层互补")),
+        stat("数据准确率", percent(dataEval?.accuracy), dataEval ? `${dataEval.passedChecks} / ${dataEval.valueCheckCount} 个数值` : "未运行"),
+        stat("知识问答 Judge", judgeEval?.score == null ? "待配置" : `${(judgeEval.score * 100).toFixed(1)}`, judgeEval?.score == null ? (llmConfigured ? "等待运行" : "需要 LLM API") : `${judgeEval.scoredCases} / ${judgeEval.caseCount} 条`),
+        stat("平均耗时", formatDuration(report?.averageLatencyMs), "单轮与多轮 Agent 平均")),
+      el("section", { class: "snapshot-grid" },
+        el("article", {}, el("small", {}, "当前知识快照"), el("strong", {}, currentKnowledge?.label || "—"), el("p", {}, `${currentKnowledge?.documentCount || 0} 文档 · ${currentKnowledge?.entityCount || 0} 实体 · ${currentKnowledge?.contentHash?.slice(0, 8) || "—"}`)),
+        el("article", {}, el("small", {}, "Agent 当前模型"), el("strong", {}, currentModel?.label || currentModel?.id || "—"), el("p", {}, `${currentModel?.metricCount || 0} 指标 · schema ${currentModel?.schemaHash?.slice(0, 8) || "—"}`)),
+        el("article", {}, el("small", {}, "当前评测集"), el("strong", {}, `${currentDatasets.length} 套`), el("p", {}, currentDatasets.map((item) => `${item.key} v${item.version}`).join(" · ")))),
+      el("div", { class: "section-heading" }, el("h2", {}, "评测体系"), el("small", {}, "五层互补")),
       el("section", { class: "suite-grid" },
         suiteCard("01 · 单轮 Agent", "路由与工具是否正确", single ? `${single.caseCount} 条 × ${single.repeatedRuns} 次` : "未生成", "覆盖口径、问数、分析、知识和安全请求。每条用例检查 Skill、必要工具、最终状态和禁用表述。", single ? `${single.passed} 通过 · ${single.failed} 失败` : "运行 npm run eval"),
         suiteCard("02 · 多轮 Agent", "上下文能否连续继承", multi ? `${multi.scenarioCount} 组 · ${multi.turnCount} 轮` : "未生成", "连续执行查数、维度拆分、分析和口径追问，逐项检查指标、维度、筛选和时间范围。", multi ? `会话隔离 ${percent(multi.isolationRate)} · 整轮通过 ${percent(multi.turnPassRate)}` : "运行 npm run eval:multi-turn"),
-        suiteCard("03 · Wiki Builder", "知识闭环能否跑通", wikiEval ? `${wikiEval.checkCount} 项检查` : "未生成", "使用两套示例验证摄入、来源、校验、审核、发布、冲突保护、索引、本体图和 Agent 引用。", wikiEval ? `${wikiEval.passed} 通过 · ${wikiEval.failed} 失败` : "运行 npm run eval:wiki")),
+        suiteCard("03 · Wiki Builder", "知识闭环能否跑通", wikiEval ? `${wikiEval.checkCount} 项检查` : "未生成", "使用两套示例验证摄入、来源、校验、审核、发布、冲突保护、索引、本体图和 Agent 引用。", wikiEval ? `${wikiEval.passed} 通过 · ${wikiEval.failed} 失败` : "运行 npm run eval:wiki"),
+        suiteCard("04 · 数据准确率", "查询结果是否等于金标", dataEval ? `${dataEval.valueCheckCount} 个数值检查` : "未生成", "独立读取事实明细并在 JavaScript 中重算原子与派生指标，再与语义查询结果逐项比较。", dataEval ? `${percent(dataEval.accuracy)} · 查询均耗时 ${formatDuration(dataEval.averageQueryMs)}` : "运行 npm run eval:data"),
+        suiteCard("05 · LLM Judge", "知识回答质量如何", judgeEval?.score == null ? "等待模型" : `${(judgeEval.score * 100).toFixed(1)} / 100`, "使用版本化金标问答，从正确性、忠实性、完整性和引用质量四个维度评分。", judgeEval?.score == null ? (judgeEval?.message || "运行 npm run eval:judge") : `${judgeEval.scoredCases} 条已评分 · Agent 均耗时 ${formatDuration(judgeEval.averageAgentLatencyMs)}`)),
       el("div", { class: "section-heading" }, el("h2", {}, "这些指标怎么算"), el("small", {}, "统一口径")),
       el("section", { class: "eval-definition-grid" },
         evaluationDefinition("单轮通过率", "通过用例数 ÷ 单轮用例总数", "一条用例需要同时满足预期 Skill、必要工具、运行状态、禁用表述和三次公开结果一致，才记为通过。"),
         evaluationDefinition("重复一致性", "三次结果签名完全相同的用例数 ÷ 用例总数", "结果签名包含 Skill、状态、工具序列和最终答案，用来发现同一个问题重复运行时的漂移。"),
         evaluationDefinition("多轮上下文准确率", "正确上下文项 ÷ 全部上下文检查项", `每轮分别检查指标、维度、筛选和时间范围。当前 ${multi?.scenarioCount ?? "—"} 组、${multi?.turnCount ?? "—"} 轮，共 ${multi?.contextCheckCount ?? "—"} 个上下文检查点。`),
         evaluationDefinition("会话隔离率", "初始上下文为空的场景数 ÷ 场景总数", "每组对话都创建独立会话，第一轮不得继承其他场景的指标、维度、时间或筛选。"),
-        evaluationDefinition("Wiki 专项通过率", "通过检查项 ÷ Wiki 检查项总数", "检查对象是构建链路，不是问答数量；当前包括两套示例和 15 个发布治理检查。"),
-        evaluationDefinition("数值准确性", "自动化测试中的实际查询结果 = 预期结果", "语义层测试直接检查参数化 SQL、派生指标和查询结果；它属于测试门禁，不混入 Agent 单轮通过率。")),
+        evaluationDefinition("数据准确率", "与独立重算结果一致的数值 ÷ 全部数值检查点", "覆盖全量、时间范围、维度拆分和维度筛选；派生指标在原始明细上独立聚合后计算，允许极小浮点误差。"),
+        evaluationDefinition("LLM Judge 分数", "四项平均得分 ÷ 5 × 100", "正确性、忠实性、完整性和引用质量各 0–5 分。Judge 使用版本化参考答案和必需来源评分；可通过 LLM_JUDGE_MODEL 配置独立裁判模型。"),
+        evaluationDefinition("平均耗时", "全部 Agent 运行耗时之和 ÷ 运行次数", "同时保留 P95 耗时。确定性回归和 LLM Judge 分开计时，避免模型网络延迟掩盖语义查询性能。"),
+        evaluationDefinition("Wiki 专项通过率", "通过检查项 ÷ Wiki 检查项总数", "检查对象是构建链路，包括摄入、来源、校验、审核、版本发布、冲突保护、索引、图谱和 Agent 引用。")),
       el("div", { class: "section-heading" }, el("h2", {}, "单轮能力覆盖"), el("small", {}, "每类 24 条")),
       el("div", { class: "mapping-grid" }, groups.map(([group, value]) =>
         el("article", { class: "mapping-card" }, el("small", { class: "eyebrow" }, groupCopy[group]?.[0] || group), el("h3", {}, `${value.passed} / ${value.total}`),
           el("p", { class: "card-copy" }, groupCopy[group]?.[1] || "能力回归"),
           el("div", { class: "progress-track" }, el("i", { style: `width:${value.total ? value.passed / value.total * 100 : 0}%` }))))),
+      el("div", { class: "section-heading" }, el("h2", {}, "评测运行历史"), el("small", {}, `${runs.length} 次`)),
+      runRows,
+      el("div", { class: "section-heading" }, el("h2", {}, "评测集版本"), el("small", {}, `${datasets.length} 个版本`)),
+      datasetRows,
       el("div", { class: "visible-note governance" }, el("strong", {}, "评测边界"),
-        el("p", {}, "当前评测使用公开合成问题和合成数据，适合做版本回归与演示验收。它衡量仓库内已定义任务的稳定性；接入真实业务后，应补充企业口径、真实问法、权限边界和人工标注答案集。")));
+        el("p", {}, `确定性套件固定关闭 LLM，用于稳定回归；Judge 套件才调用配置的模型，避免一次评测意外产生 360 次模型调用。命令行完整门禁仍可使用 ${command}。每次页面评测都会记录知识内容哈希、Wiki 发布版本、语义模型哈希和五套评测集版本。`)));
+    if (runActive) state.evaluationTimer = setTimeout(() => { if (parseRoute().path === "/evaluate") renderRoute(); }, 1200);
   } catch (error) {
     if (token === state.viewToken) shell.replaceChildren(errorState(error));
   }
@@ -1531,6 +1713,7 @@ async function renderSettings(token) {
 async function renderRoute() {
   const { path, query } = parseRoute();
   const token = ++state.viewToken;
+  if (state.evaluationTimer) { clearTimeout(state.evaluationTimer); state.evaluationTimer = null; }
   closeStreams(); closePanels(); markActive(path);
   $("#workspace").replaceChildren(loading());
   $("#workspace").scrollTop = 0;

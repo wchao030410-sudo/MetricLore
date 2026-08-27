@@ -31,13 +31,17 @@ const wiki = new WikiIndex(undefined, ontology);
 const agent = new MetricLoreAgent({ semantic, wiki, db, ontology, skills: new SkillRegistry() });
 const conversations = new ConversationService({ db, agent, semantic });
 const results = [];
+const latencies = [];
 
 try {
   for (const scenario of multiTurnCases) {
     const conversation = conversations.createConversation({ title: scenario.title });
     const turns = [];
     for (const [index, turn] of scenario.turns.entries()) {
+      const started = performance.now();
       const response = await conversations.submitMessage(conversation.id, turn.question);
+      const latencyMs = performance.now() - started;
+      latencies.push(latencyMs);
       const tools = response.run.toolCalls.map((call) => call.toolName);
       const context = response.run.contextAfter || {};
       const contextChecks = {
@@ -56,7 +60,7 @@ try {
       if (!contextChecks.range) failures.push(`range expected ${turn.expected.context.rangeDays} days, got ${rangeDays(context.timeRange)}`);
       if (!response.run.events.some((event) => event.type === "run.completed")) failures.push("missing terminal run.completed event");
       if (!response.run.evidence.length) failures.push("missing evidence");
-      turns.push({ index: index + 1, question: turn.question, pass: failures.length === 0, failures, capability: response.run.capability, skill: response.run.plan?.skill, tools, context, contextChecks, contextBefore: response.run.contextBefore });
+      turns.push({ index: index + 1, question: turn.question, pass: failures.length === 0, failures, latencyMs, capability: response.run.capability, skill: response.run.plan?.skill, tools, context, contextChecks, contextBefore: response.run.contextBefore });
     }
     const firstBefore = turns[0]?.contextBefore || {};
     const isolated = !(firstBefore.metrics || []).length && !(firstBefore.dimensions || []).length && !firstBefore.timeRange && !Object.keys(firstBefore.filters || {}).length;
@@ -73,6 +77,9 @@ const passedScenarios = results.filter((item) => item.pass).length;
 const passedTurns = results.flatMap((item) => item.turns).filter((item) => item.pass).length;
 const contextChecks = results.flatMap((item) => item.turns).flatMap((turn) => Object.values(turn.contextChecks));
 const isolatedScenarios = results.filter((item) => item.isolated).length;
+const sortedLatencies = [...latencies].sort((a, b) => a - b);
+const averageLatencyMs = latencies.reduce((sum, value) => sum + value, 0) / latencies.length;
+const p95LatencyMs = sortedLatencies[Math.min(Math.ceil(sortedLatencies.length * 0.95) - 1, sortedLatencies.length - 1)];
 const report = {
   generatedAt: new Date().toISOString(),
   scenarioCount,
@@ -86,9 +93,11 @@ const report = {
   contextAccuracy: contextChecks.filter(Boolean).length / contextChecks.length,
   isolatedScenarios,
   isolationRate: isolatedScenarios / scenarioCount,
+  averageLatencyMs,
+  p95LatencyMs,
   results,
 };
 mkdirSync(resolve(ROOT, "outputs/evals"), { recursive: true });
 writeFileSync(resolve(ROOT, "outputs/evals/multi-turn-latest.json"), JSON.stringify(report, null, 2));
-console.log(JSON.stringify({ scenarioCount, turnCount, passedScenarios, failedScenarios: report.failedScenarios, contextAccuracy: report.contextAccuracy, isolationRate: report.isolationRate, output: "outputs/evals/multi-turn-latest.json" }, null, 2));
+console.log(JSON.stringify({ scenarioCount, turnCount, passedScenarios, failedScenarios: report.failedScenarios, contextAccuracy: report.contextAccuracy, isolationRate: report.isolationRate, averageLatencyMs, p95LatencyMs, output: "outputs/evals/multi-turn-latest.json" }, null, 2));
 if (report.failedScenarios) process.exitCode = 1;

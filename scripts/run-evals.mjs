@@ -16,9 +16,14 @@ const semantic = new SemanticLayer();
 const wiki = new WikiIndex(undefined, ontology);
 const agent = new MetricLoreAgent({ semantic, wiki, db, ontology, skills: new SkillRegistry() });
 const results = [];
+const latencies = [];
 for (const item of cases) {
   const runs = [];
-  for (let repeat = 0; repeat < 3; repeat += 1) runs.push(await agent.answer(item.question));
+  for (let repeat = 0; repeat < 3; repeat += 1) {
+    const started = performance.now();
+    runs.push(await agent.answer(item.question));
+    latencies.push(performance.now() - started);
+  }
   const result = runs[0];
   const tools = result.toolCalls.map((call) => call.name);
   const failures = [];
@@ -34,12 +39,15 @@ for (const item of cases) {
 closeDatabase();
 const passed = results.filter((item) => item.pass).length;
 const consistencyRate = results.filter((item) => item.consistent).length / results.length;
-const report = { generatedAt: new Date().toISOString(), caseCount: results.length, repeatedRuns: 3, passed, failed: results.length - passed, passRate: passed / results.length, consistencyRate, results };
+const sortedLatencies = [...latencies].sort((a, b) => a - b);
+const averageLatencyMs = latencies.reduce((sum, value) => sum + value, 0) / latencies.length;
+const p95LatencyMs = sortedLatencies[Math.min(Math.ceil(sortedLatencies.length * 0.95) - 1, sortedLatencies.length - 1)];
+const report = { generatedAt: new Date().toISOString(), caseCount: results.length, repeatedRuns: 3, passed, failed: results.length - passed, passRate: passed / results.length, consistencyRate, averageLatencyMs, p95LatencyMs, results };
 const output = resolve(ROOT, "outputs/evals/latest.json");
 mkdirSync(resolve(ROOT, "outputs/evals"), { recursive: true });
 writeFileSync(output, JSON.stringify(report, null, 2));
 const escape = (value) => String(value).replace(/[&<>\"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]);
 const html = `<!doctype html><meta charset="utf-8"><title>MetricLore Eval Report</title><style>body{font-family:system-ui;margin:40px;color:#17221d}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #dfe7e1;padding:8px;text-align:left}.pass{color:#0d7a50}.fail{color:#b42318}</style><h1>MetricLore Evaluation</h1><p>Generated: ${escape(report.generatedAt)}</p><h2>${passed}/${results.length} passed (${(report.passRate * 100).toFixed(1)}%)</h2><p>Three-run public-result consistency: ${(report.consistencyRate * 100).toFixed(1)}%</p><table><tr><th>ID</th><th>Group</th><th>Question</th><th>Skill</th><th>Tools</th><th>Result</th></tr>${results.map((item) => `<tr><td>${escape(item.id)}</td><td>${escape(item.group)}</td><td>${escape(item.question)}</td><td>${escape(item.skill)}</td><td>${escape(item.tools.join(", "))}</td><td class="${item.pass ? "pass" : "fail"}">${item.pass ? "PASS" : escape(item.failures.join("; "))}</td></tr>`).join("")}</table>`;
 writeFileSync(resolve(ROOT, "outputs/evals/latest.html"), html);
-console.log(JSON.stringify({ caseCount: report.caseCount, repeatedRuns: report.repeatedRuns, passed, failed: report.failed, passRate: report.passRate, consistencyRate: report.consistencyRate, output: "outputs/evals/latest.json", html: "outputs/evals/latest.html" }, null, 2));
+console.log(JSON.stringify({ caseCount: report.caseCount, repeatedRuns: report.repeatedRuns, passed, failed: report.failed, passRate: report.passRate, consistencyRate: report.consistencyRate, averageLatencyMs, p95LatencyMs, output: "outputs/evals/latest.json", html: "outputs/evals/latest.html" }, null, 2));
 if (report.failed) process.exitCode = 1;
