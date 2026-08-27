@@ -1,1 +1,1 @@
-{"name":"metric-query","version":"0.1.0","description":"执行受治理的单点、趋势、期间对比与维度拆分查询","triggers":["data"],"allowedTools":["semantic_catalog","metric_query","compare_periods","dimension_breakdown","submit_evidence"],"maxSteps":5}
+{"name":"metric-query","version":"0.1.0","description":"执行受治理的单点、趋势、期间对比与维度拆分查询","triggers":["data"],"allowedTools":["semantic_catalog","metric_query","compare_periods","dimension_breakdown","submit_evidence"],"maxSteps":6}

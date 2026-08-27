@@ -1,1 +1,1 @@
-{"name":"comparative-analysis","version":"0.1.0","description":"基于受控数据与知识证据完成保守的对比分析","triggers":["analysis"],"allowedTools":["semantic_catalog","metric_query","compare_periods","dimension_breakdown","wiki_search","submit_evidence"],"maxSteps":6}
+{"name":"comparative-analysis","version":"0.1.0","description":"基于受控数据与知识证据完成保守的对比分析","triggers":["analysis"],"allowedTools":["semantic_catalog","metric_query","compare_periods","dimension_breakdown","wiki_search","submit_evidence"],"maxSteps":8}
