@@ -14,7 +14,7 @@
 
 | 企业实现 | 本地实现 |
 |---|---|
-| 内部 Java 多模块和中间件 | Node 标准库单体服务 |
+| 内部 Java 多模块和中间件 | Node 服务（核心标准库 + 少量开源文档解析依赖） |
 | Doris/Hive/内部数据访问层 | SQLite |
 | 内部指标与 Wiki MCP | 进程内 SemanticLayer / WikiIndex |
 | 内部 SSO 与权限接口 | 本地单用户演示 |

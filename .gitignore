@@ -1,6 +1,7 @@
 .env
 data/*.db
 data/*.db-*
+data/uploads/
 node_modules/
 .DS_Store
 coverage/

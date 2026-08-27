@@ -6,7 +6,7 @@
 - 未包含企业真实表结构、指标值、业务文档、评测问题和聊天记录。
 - 未保留企业域名、内部 Java 包、内部 MCP、SSO、RPC、中间件与发布系统。
 - 演示数据由 SQL 确定性生成，地区、渠道和数值均为虚构示例。
-- 运行时只使用 Node.js 标准库，没有私有包或 npm 安装步骤。
+- 核心服务使用 Node.js 标准库；文档摄入使用公开的开源解析包（mammoth / pdfjs-dist / read-excel-file / jszip / node-html-parser），无私有包或内部服务。
 - 提供自动扫描脚本：`npm run audit`。
 
 ## 发布人仍需确认

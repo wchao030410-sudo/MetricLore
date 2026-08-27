@@ -16,7 +16,14 @@
     "demo": "node scripts/demo.mjs"
   },
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.13.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.1",
+    "node-html-parser": "^9.0.1",
+    "pdfjs-dist": "^6.2.108",
+    "read-excel-file": "^9.3.10"
+  }
 }

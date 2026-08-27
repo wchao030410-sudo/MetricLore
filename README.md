@@ -6,7 +6,7 @@
 
 基于语义层、知识本体和 Skill 编排的数据智能体
 
-[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.5-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-local--first-003B57?logo=sqlite&logoColor=white)](https://sqlite.org/)
 [![Evaluation](https://img.shields.io/badge/evals-120%20cases-6C5CE7)](evals/README.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -103,12 +103,13 @@ Wiki 页面使用 Markdown 与结构化 Frontmatter 保存业务知识。Ontolog
 
 ## 快速开始
 
-运行环境：Node.js 22.5 或更高版本。项目使用 Node.js 内置模块，启动过程无需安装第三方 npm 依赖。
+运行环境：Node.js 22.13 或更高版本。核心服务使用 Node.js 内置模块；文档摄入（PDF/DOCX/XLSX/ZIP/HTML）使用少量开源解析依赖，启动前需执行一次 `npm install`。
 
 ```bash
 git clone git@github.com:wchao030410-sudo/MetricLore.git
 cd MetricLore
 cp .env.example .env
+npm install
 npm start
 ```
 
@@ -247,6 +248,19 @@ GET  /api/wiki/trace/:key
 GET  /api/wiki/search?q=客单价
 POST /api/query
 POST /api/chat
+```
+
+知识摄入（v0.2 M1）：
+
+```text
+POST /api/knowledge/jobs                    # multipart 上传，创建摄入任务
+GET  /api/knowledge/jobs                    # 任务列表（status/limit/cursor）
+GET  /api/knowledge/jobs/:id                # 任务详情与文件状态
+GET  /api/knowledge/jobs/:id/candidates     # 候选实体列表
+GET  /api/knowledge/candidates/:id          # 候选详情与来源
+GET  /api/knowledge/jobs/:id/events         # 任务进度 SSE
+POST /api/knowledge/jobs/:id/retry          # 重试失败文件
+POST /api/knowledge/jobs/:id/cancel         # 取消任务
 ```
 
 ## 项目结构
