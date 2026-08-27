@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -107,4 +107,11 @@ test("HTTP workbench endpoints serve wiki pages, graph, candidates and evaluatio
     server.close();
     closeDatabase();
   }
+});
+
+test("responsive context drawer stays scoped to Ask routes", () => {
+  const source = readFileSync(resolve(import.meta.dirname, "../public/app.js"), "utf8");
+  assert.match(source, /classList\.contains\("has-context"\).*matchMedia/s);
+  assert.match(source, /\$\("#open-context"\)\.hidden = !isAsk/);
+  assert.match(source, /head\.addEventListener\("keydown"/);
 });

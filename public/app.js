@@ -210,7 +210,10 @@ function openContext({ eyebrow = "上下文", title = "详情", content = [] }) 
   $("#context-eyebrow").textContent = eyebrow;
   $("#context-title").textContent = title;
   $("#context-body").replaceChildren(...(Array.isArray(content) ? content : [content]));
-  if (matchMedia("(max-width: 1180px)").matches) document.body.classList.add("context-open");
+  // 上下文面板只属于 Ask。其它路由可以预填详情，但不能在小屏幕触发一个不可见的遮罩层。
+  if ($("#stage")?.classList.contains("has-context") && matchMedia("(max-width: 1180px)").matches) {
+    document.body.classList.add("context-open");
+  }
 }
 
 function defaultContext(title = "工作区", copy = "选择执行轨迹、证据、实体或文件，查看与当前任务相关的细节。") {
@@ -432,7 +435,11 @@ function dataView(data) {
     tableHost.replaceChildren(el("table", { class: "data-table" },
       el("thead", {}, el("tr", {}, columns.map((column) => {
         const head = el("th", { class: "sortable", role: "button", tabindex: 0 }, column, sort.column === column ? el("span", { class: "sort-arrow" }, sort.direction > 0 ? "↑" : "↓") : null);
-        head.addEventListener("click", () => { if (sort.column === column) sort.direction *= -1; else { sort.column = column; sort.direction = 1; } renderTable(); });
+        const changeSort = () => { if (sort.column === column) sort.direction *= -1; else { sort.column = column; sort.direction = 1; } renderTable(); };
+        head.addEventListener("click", changeSort);
+        head.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); changeSort(); }
+        });
         return head;
       }))),
       el("tbody", {}, sorted.slice(0, 50).map((row) => el("tr", {}, columns.map((column) => el("td", {}, row[column] ?? "—")))))));
@@ -1381,6 +1388,7 @@ async function renderRoute() {
   // 右侧上下文面板只在 Ask（会话）页面出现，按会话独立展示
   const isAsk = path === "/ask" || path.startsWith("/ask/");
   $("#stage")?.classList.toggle("has-context", isAsk);
+  $("#open-context").hidden = !isAsk;
   try {
     let match;
     if (path === "/ask") await renderAskHome(token);
