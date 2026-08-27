@@ -1,6 +1,6 @@
 {
   "name": "metriclore",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ontology-grounded agent for trustworthy metric answers and data analysis",
   "type": "module",
   "scripts": {
@@ -13,6 +13,9 @@
     "ingest:sql": "node scripts/ingest.mjs raw/sample-query.sql",
     "review": "node scripts/review-queue.mjs",
     "eval": "node scripts/run-evals.mjs",
+    "eval:multi-turn": "node scripts/run-multi-turn-evals.mjs",
+    "eval:wiki": "node scripts/run-wiki-evals.mjs",
+    "verify": "npm test && npm run health && npm run eval && npm run eval:multi-turn && npm run eval:wiki && npm run audit && npm audit --omit=dev",
     "demo": "node scripts/demo.mjs"
   },
   "engines": {

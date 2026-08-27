@@ -97,6 +97,7 @@ SQLite 保存运行状态；Markdown 保存已发布 Wiki 正文。
 | plan_json | TEXT | Skill Plan |
 | budget_json | TEXT | 步数与超时 |
 | validation_json | TEXT | Answer Review 结果 |
+| result_json | TEXT | 受治理查询结果快照，用于图表与表格恢复 |
 | error_json | TEXT | 统一错误 |
 | started_at | TEXT | 可空 |
 | completed_at | TEXT | 可空 |

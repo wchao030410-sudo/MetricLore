@@ -1,0 +1,4 @@
+key,type,name,definition,aliases
+metric-refund-orders,Metric,退款订单数,统计周期内退款成功的去重订单数,退款单量
+dimension-refund-reason,Dimension,退款原因,退款完成时记录的标准原因分类,售后原因
+

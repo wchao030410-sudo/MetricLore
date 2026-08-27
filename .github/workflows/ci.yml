@@ -12,7 +12,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      - run: npm ci
       - run: npm test
       - run: npm run health
       - run: npm run eval
+      - run: npm run eval:multi-turn
+      - run: npm run eval:wiki
       - run: npm run audit
+      - run: npm audit --omit=dev

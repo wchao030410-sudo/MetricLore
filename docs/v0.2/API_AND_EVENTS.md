@@ -293,11 +293,11 @@ Request：
 
 ### GET /api/wiki/pages/:key/source
 
-Query 使用 `sourceKey` 和 locator，返回允许展示的原文片段与定位信息。
+Query 使用 `index` 选择页面 `sources` 中的来源，返回允许展示的原文片段与定位信息。
 
 ### GET /api/wiki/graph
 
-Query：`startKey`、`depth`、`entityTypes`、`relationTypes`、`status`。默认深度 1，最大 3，最大节点 200。
+Query：`focus`、`depth`、可重复的 `type`、`relation` 和 `status`。默认深度 2，最大 3，最大节点 200。
 
 现有 `/api/wiki/search`、`/api/wiki/entity/:key` 和 `/api/wiki/trace/:key` 在 v0.2 保留。
 
@@ -313,7 +313,7 @@ Query：`startKey`、`depth`、`entityTypes`、`relationTypes`、`status`。默�
 
 ## 8. 兼容与测试
 
-- 现有 `/api/chat` 在 M3 前保持运行；M3 完成后内部适配到临时会话，不承担多轮持久化。
+- 现有 `/api/chat` 保留为无状态单轮兼容接口；持久化多轮使用 Conversation API。
 - 现有 `/api/query` 保持语义查询契约。
 - 契约测试覆盖状态码、信封、ID 前缀、时间、分页、幂等、revision 冲突和 SSE 重连。
 - 前端只依赖本文件声明的公开字段，不读取数据库内部列。
