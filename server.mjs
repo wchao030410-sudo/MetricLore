@@ -2,7 +2,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 
-import { DataAgent } from "./lib/agent.mjs";
+import { MetricLoreAgent } from "./lib/agent.mjs";
 import { loadEnv, ROOT } from "./lib/config.mjs";
 import { openDatabase } from "./lib/database.mjs";
 import { Ontology } from "./lib/ontology.mjs";
@@ -16,7 +16,7 @@ const semantic = new SemanticLayer();
 const ontology = new Ontology();
 const skills = new SkillRegistry();
 const wiki = new WikiIndex(undefined, ontology);
-const agent = new DataAgent({ semantic, wiki, db, ontology, skills });
+const agent = new MetricLoreAgent({ semantic, wiki, db, ontology, skills });
 const publicDir = resolve(ROOT, "public");
 
 const mime = {
@@ -90,5 +90,5 @@ export function createAppServer() {
 if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
   const host = process.env.HOST || "127.0.0.1";
   const port = Number(process.env.PORT || 3000);
-  createAppServer().listen(port, host, () => console.log(`Data Agent: http://${host}:${port}`));
+  createAppServer().listen(port, host, () => console.log(`MetricLore: http://${host}:${port}`));
 }

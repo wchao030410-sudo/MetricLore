@@ -12,7 +12,7 @@ const checks = [
 
 function walk(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    if ([".git", "node_modules", "data_agent.db"].includes(entry.name)) return [];
+    if ([".git", "node_modules", "metriclore.db"].includes(entry.name)) return [];
     const path = resolve(dir, entry.name);
     return entry.isDirectory() ? walk(path) : [path];
   });

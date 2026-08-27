@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 
-import { DataAgent } from "../lib/agent.mjs";
+import { MetricLoreAgent } from "../lib/agent.mjs";
 import { closeDatabase, openDatabase } from "../lib/database.mjs";
 import { Ontology } from "../lib/ontology.mjs";
 import { SemanticLayer } from "../lib/semantic-layer.mjs";
@@ -12,11 +12,11 @@ import { SkillRegistry } from "../lib/skill-registry.mjs";
 import { WikiIndex } from "../lib/wiki.mjs";
 
 function createAgent() {
-  const db = openDatabase(resolve(mkdtempSync(resolve(tmpdir(), "data-agent-runtime-")), "test.db"));
+  const db = openDatabase(resolve(mkdtempSync(resolve(tmpdir(), "metriclore-runtime-")), "test.db"));
   const ontology = new Ontology();
   const semantic = new SemanticLayer();
   const wiki = new WikiIndex(undefined, ontology);
-  return new DataAgent({ db, ontology, semantic, wiki, skills: new SkillRegistry() });
+  return new MetricLoreAgent({ db, ontology, semantic, wiki, skills: new SkillRegistry() });
 }
 
 test("loads declarative skills and executes a traced definition workflow", async () => {
@@ -71,9 +71,9 @@ test("uses an OpenAI-compatible tool calling loop when a model is configured", a
   const original = { key: process.env.LLM_API_KEY, model: process.env.LLM_MODEL, base: process.env.LLM_BASE_URL };
   process.env.LLM_API_KEY = "test-key"; process.env.LLM_MODEL = "test-model"; process.env.LLM_BASE_URL = "http://test.local/v1";
   try {
-    const db = openDatabase(resolve(mkdtempSync(resolve(tmpdir(), "data-agent-runtime-")), "test.db"));
+    const db = openDatabase(resolve(mkdtempSync(resolve(tmpdir(), "metriclore-runtime-")), "test.db"));
     const ontology = new Ontology(); const semantic = new SemanticLayer(); const wiki = new WikiIndex(undefined, ontology);
-    const agent = new DataAgent({ db, ontology, semantic, wiki, skills: new SkillRegistry(), fetchFn });
+    const agent = new MetricLoreAgent({ db, ontology, semantic, wiki, skills: new SkillRegistry(), fetchFn });
     const result = await agent.answer("客单价的口径是什么？");
     assert.equal(result.provider, "llm");
     assert.equal(count, 2);

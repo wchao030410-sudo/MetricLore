@@ -101,9 +101,9 @@ function renderSkills(data) {
 
 function addMessage(role, text, payload) {
   const article = el("article", { class: role });
-  if (role === "assistant") article.append(el("div", { class: "avatar" }, "DA"));
+  if (role === "assistant") article.append(el("div", { class: "avatar" }, "ML"));
   const box = el("div");
-  if (role === "assistant") box.append(el("strong", {}, "Data Agent"));
+  if (role === "assistant") box.append(el("strong", {}, "MetricLore"));
   box.append(el("p", {}, text));
   if (payload?.data?.rows?.length) {
     const table = el("table");
@@ -127,7 +127,7 @@ async function ask(message) {
   addMessage("user", message);
   $("#message").value = "";
   const pending = el("article", { class: "assistant" });
-  pending.append(el("div", { class: "avatar" }, "DA"), el("p", {}, "正在检索口径与数据…"));
+  pending.append(el("div", { class: "avatar" }, "ML"), el("p", {}, "正在检索口径与数据…"));
   $("#conversation").append(pending);
   try {
     const result = await api("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message }) });

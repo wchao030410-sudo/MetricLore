@@ -1,7 +1,7 @@
 {
-  "name": "data-agent-local",
+  "name": "metriclore",
   "version": "0.1.0",
-  "description": "Local-first metrics, semantic layer, wiki and data analysis agent",
+  "description": "Ontology-grounded agent for trustworthy metric answers and data analysis",
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
